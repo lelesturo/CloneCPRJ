@@ -1,0 +1,819 @@
+<?xml version="1.0" encoding="utf-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xiGrid="https://www.igrid-td.com/iConfICD/SCL.xsd" version="2007" revision="B">
+  <Private type="iGrid-CreationDate">2026/04/10</Private>
+  <Private type="iGrid-CreationTime">11:37:38</Private>
+  <Private type="iGrid-LibSignature">0038f4cfe00c986d61d21d3ed30ee2db</Private>
+  <Private type="iGrid-ConfigToolVer">1.4.0.0</Private>
+  <Private type="iGrid-ConfigToolName">iConfICD</Private>
+  <Header id="SCL Example T1-1" nameStructure="IEDName" />
+  <Communication>
+    <SubNetwork name="W01" type="8-MMS">
+      <Text>Station bus</Text>
+      <BitRate unit="b/s">10</BitRate>
+      <ConnectedAP iedName="TNOT3M01SmnpBMVY" apName="S1">
+        <Address>
+          <P type="IP">10.16.26.21</P>
+          <P type="IP-SUBNET">255.255.255.0</P>
+          <P type="IP-GATEWAY">0.0.0.0</P>
+          <P type="OSI-PSEL">00000001</P>
+          <P type="OSI-SSEL">0001</P>
+          <P type="OSI-TSEL">0001</P>
+        </Address>
+        <GSE ldInst="M4" cbName="gse_GseUPDM">
+          <Address>
+            <P type="MAC-Address">01-0C-CD-01-00-01</P>
+            <P type="APPID">2000</P>
+            <P type="VLAN-ID">005</P>
+            <P type="VLAN-PRIORITY">7</P>
+          </Address>
+          <MinTime unit="s">4</MinTime>
+          <MaxTime unit="s">1000</MaxTime>
+        </GSE>
+      </ConnectedAP>
+    </SubNetwork>
+  </Communication>
+  <IED name="TNOT3M01SmnpBMVY" originalSclVersion="2003" originalSclRevision="B">
+    <Services nameLength="64">
+      <GetDirectory />
+      <GetDataObjectDefinition />
+      <GetDataSetValue />
+      <DataSetDirectory />
+      <ReadWrite />
+      <FileHandling />
+      <GetCBValues />
+      <ConfDataSet max="10" maxAttributes="70" />
+      <ConfReportControl max="20" />
+      <ConfLogControl max="1" />
+      <ReportSettings bufTime="Fix" cbName="Fix" rptID="Fix" datSet="Fix" intgPd="Fix" optFields="Fix" trgOps="Fix" />
+      <LogSettings cbName="Conf" datSet="Conf" logEna="Conf" trgOps="Conf" intgPd="Conf" />
+      <GSESettings appID="Fix" cbName="Fix" datSet="Fix" dataLabel="Fix" />
+      <GOOSE max="15" />
+      <ConfLNs fixLnInst="true" />
+    </Services>
+    <AccessPoint name="S1">
+      <Server>
+        <Authentication />
+        <LDevice desc="description" inst="M4">
+          <LN0 desc="description" lnType="iGrid_3M01_EV_LLN0" lnClass="LLN0" inst="">
+            <DataSet name="ds_Anom" desc="">
+              <FCDA ldInst="M4" prefix="DISP" lnInst="1" lnClass="GGIO" doName="Ind1" fc="ST" />
+              <FCDA ldInst="M4" prefix="DISP" lnInst="1" lnClass="GGIO" doName="Ind2" fc="ST" />
+              <FCDA ldInst="M4" prefix="DISP" lnInst="1" lnClass="GGIO" doName="Ind3" fc="ST" />
+              <FCDA ldInst="M4" prefix="DISP" lnInst="1" lnClass="GGIO" doName="Ind4" fc="ST" />
+              <FCDA ldInst="M4" prefix="DISP" lnInst="1" lnClass="GGIO" doName="Ind5" fc="ST" />
+              <FCDA ldInst="M4" prefix="DISP" lnInst="1" lnClass="GGIO" doName="Ind6" fc="ST" />
+              <FCDA ldInst="M4" prefix="DISP" lnInst="1" lnClass="GGIO" doName="Ind7" fc="ST" />
+              <FCDA ldInst="M4" prefix="DISP" lnInst="1" lnClass="GGIO" doName="Ind8" fc="ST" />
+              <FCDA ldInst="M4" prefix="DISP" lnInst="1" lnClass="GGIO" doName="Ind9" fc="ST" />
+              <FCDA ldInst="M4" prefix="DISP" lnInst="1" lnClass="GGIO" doName="Ind10" fc="ST" />
+              <FCDA ldInst="M4" prefix="LBMU" lnInst="1" lnClass="LPHD" doName="AnIO" fc="ST" />
+              <FCDA ldInst="M4" prefix="LBMU" lnInst="1" lnClass="LPHD" doName="AnSt" fc="ST" />
+              <FCDA ldInst="M4" prefix="LBMU" lnInst="1" lnClass="LTMS" doName="TmSynErr" fc="ST" />
+              <FCDA ldInst="M4" prefix="L87A" lnInst="1" lnClass="PTRC" doName="Op" fc="ST" />
+              <FCDA ldInst="M4" prefix="L87B" lnInst="1" lnClass="PTRC" doName="Op" fc="ST" />
+              <FCDA ldInst="M4" prefix="LPWR" lnInst="1" lnClass="GAPC" doName="Alm1" fc="ST" />
+              <FCDA ldInst="M4" prefix="LBMU" lnInst="1" lnClass="LPHD" doName="BlkPdSA" fc="ST" />
+              <FCDA ldInst="M4" prefix="LBMU" lnInst="1" lnClass="LPHD" doName="BlkPdSB" fc="ST" />
+              <FCDA ldInst="M4" prefix="LSF6SA" lnInst="2" lnClass="SIMG" doName="InsAlm" fc="ST" />
+              <FCDA ldInst="M4" prefix="LSF6SB" lnInst="2" lnClass="SIMG" doName="InsAlm" fc="ST" />
+              <FCDA ldInst="M4" prefix="LSF6" lnInst="1" lnClass="SIMG" doName="PresAlm" fc="ST" />
+            </DataSet>
+            <DataSet name="ds_stati" desc="">
+              <FCDA ldInst="M4" prefix="L81A" lnInst="1" lnClass="PTUF" doName="Op" fc="ST" />
+              <FCDA ldInst="M4" prefix="L81A" lnInst="2" lnClass="PTUF" doName="Op" fc="ST" />
+              <FCDA ldInst="M4" prefix="L81A" lnInst="3" lnClass="PTUF" doName="Op" fc="ST" />
+              <FCDA ldInst="M4" prefix="L81B" lnInst="1" lnClass="PTUF" doName="Op" fc="ST" />
+              <FCDA ldInst="M4" prefix="L81B" lnInst="2" lnClass="PTUF" doName="Op" fc="ST" />
+              <FCDA ldInst="M4" prefix="L81B" lnInst="3" lnClass="PTUF" doName="Op" fc="ST" />
+              <FCDA ldInst="M4" prefix="L81" lnInst="1" lnClass="GAPC" doName="Op1" fc="ST" />
+              <FCDA ldInst="M4" prefix="L81" lnInst="2" lnClass="GAPC" doName="Op1" fc="ST" />
+              <FCDA ldInst="M4" prefix="L87PB" lnInst="1" lnClass="GAPC" doName="Ind1" fc="ST" />
+              <FCDA ldInst="M4" prefix="LBFA" lnInst="1" lnClass="RBRF" doName="OpIn" fc="ST" />
+              <FCDA ldInst="M4" prefix="LBFB" lnInst="1" lnClass="RBRF" doName="OpIn" fc="ST" />
+              <FCDA ldInst="M4" prefix="LDFR" lnInst="1" lnClass="RDRE" doName="RcdStr" fc="ST" />
+              <FCDA ldInst="M4" prefix="LME" lnInst="1" lnClass="GGIO" doName="Ind3" fc="ST" />
+              <FCDA ldInst="M4" prefix="LME" lnInst="1" lnClass="GGIO" doName="SPCSO1" fc="ST" />
+              <FCDA ldInst="M4" prefix="LME" lnInst="1" lnClass="GGIO" doName="Ind4" fc="ST" />
+              <FCDA ldInst="M4" prefix="LMSBA" lnInst="1" lnClass="GAPC" doName="Op1" fc="ST" />
+              <FCDA ldInst="M4" prefix="LMSBB" lnInst="1" lnClass="GAPC" doName="Op1" fc="ST" />
+              <FCDA ldInst="M4" prefix="LEACA" lnInst="1" lnClass="PTUF" doName="Op" fc="ST" />
+              <FCDA ldInst="M4" prefix="LEACB" lnInst="1" lnClass="PTUF" doName="Op" fc="ST" />
+            </DataSet>
+            <DataSet name="ds_allarmi" desc="">
+              <FCDA ldInst="M4" prefix="L87B" lnInst="1" lnClass="GAPC" doName="Wrn1" fc="ST" />
+              <FCDA ldInst="M4" prefix="LPWRT" lnInst="2" lnClass="CALH" doName="GrAlm" fc="ST" />
+              <FCDA ldInst="M4" prefix="LAUT" lnInst="1" lnClass="GAPC" doName="Op1" fc="ST" />
+            </DataSet>
+            <DataSet name="ds_misure" desc="">
+              <FCDA ldInst="M4" prefix="LBAY" lnInst="1" lnClass="MMXU" doName="Hz" fc="MX" />
+              <FCDA ldInst="M4" prefix="LBAY" lnInst="1" lnClass="MMXU" doName="PPV.phsAB" fc="MX" />
+              <FCDA ldInst="M4" prefix="LBAY" lnInst="1" lnClass="MMXU" doName="PPV.phsBC" fc="MX" />
+              <FCDA ldInst="M4" prefix="LBAY" lnInst="1" lnClass="MMXU" doName="PPV.phsCA" fc="MX" />
+              <FCDA ldInst="M4" prefix="LBAY" lnInst="2" lnClass="MMXU" doName="Hz" fc="MX" />
+              <FCDA ldInst="M4" prefix="LBAY" lnInst="2" lnClass="MMXU" doName="PPV.phsAB" fc="MX" />
+              <FCDA ldInst="M4" prefix="LBAY" lnInst="2" lnClass="MMXU" doName="PPV.phsBC" fc="MX" />
+              <FCDA ldInst="M4" prefix="LBAY" lnInst="2" lnClass="MMXU" doName="PPV.phsCA" fc="MX" />
+            </DataSet>
+            <DataSet name="ds_misureUPDM" desc="misure per UPDM">
+              <FCDA ldInst="M4" prefix="LBAY" lnInst="1" lnClass="MMXU" doName="PPV.phsBC" fc="MX" />
+              <FCDA ldInst="M4" prefix="LBAY" lnInst="1" lnClass="MMXU" doName="Hz" fc="MX" />
+              <FCDA ldInst="M4" prefix="LBAY" lnInst="2" lnClass="MMXU" doName="PPV.phsBC" fc="MX" />
+              <FCDA ldInst="M4" prefix="LBAY" lnInst="2" lnClass="MMXU" doName="Hz" fc="MX" />
+            </DataSet>
+            <DataSet name="ds_AnomUPDM" desc="anomalie per UPDM">
+              <FCDA ldInst="M4" prefix="LBMU" lnInst="1" lnClass="LPHD" doName="AnIO" fc="ST" />
+              <FCDA ldInst="M4" prefix="LBMU" lnInst="1" lnClass="LPHD" doName="AnSt" fc="ST" />
+              <FCDA ldInst="M4" prefix="LBMU" lnInst="1" lnClass="LTMS" doName="TmSynErr" fc="ST" />
+              <FCDA ldInst="M4" prefix="LSWT" lnInst="1" lnClass="GAPC" doName="Alm1" fc="ST" />
+            </DataSet>
+            <DataSet name="ds_GseUPDM" desc="Goose per UPDM">
+              <FCDA ldInst="M4" prefix="LBAY1" lnInst="1" lnClass="GAPC" doName="Ind1" fc="ST" />
+              <FCDA ldInst="M4" prefix="LBAY1" lnInst="1" lnClass="GAPC" doName="Ind2" fc="ST" />
+              <FCDA ldInst="M4" prefix="LBAY1" lnInst="1" lnClass="GAPC" doName="Ind3" fc="ST" />
+              <FCDA ldInst="M4" prefix="LBAY2" lnInst="1" lnClass="GAPC" doName="Ind1" fc="ST" />
+              <FCDA ldInst="M4" prefix="LBAY2" lnInst="1" lnClass="GAPC" doName="Ind2" fc="ST" />
+              <FCDA ldInst="M4" prefix="LBAY2" lnInst="1" lnClass="GAPC" doName="Ind3" fc="ST" />
+              <FCDA ldInst="M4" prefix="LBAY3" lnInst="1" lnClass="GAPC" doName="Ind1" fc="ST" />
+              <FCDA ldInst="M4" prefix="LBAY3" lnInst="1" lnClass="GAPC" doName="Ind2" fc="ST" />
+              <FCDA ldInst="M4" prefix="LBAY3" lnInst="1" lnClass="GAPC" doName="Ind3" fc="ST" />
+              <FCDA ldInst="M4" prefix="LBAY4" lnInst="1" lnClass="GAPC" doName="Ind1" fc="ST" />
+              <FCDA ldInst="M4" prefix="LBAY4" lnInst="1" lnClass="GAPC" doName="Ind2" fc="ST" />
+              <FCDA ldInst="M4" prefix="LBAY4" lnInst="1" lnClass="GAPC" doName="Ind3" fc="ST" />
+              <FCDA ldInst="M4" prefix="LBAY5" lnInst="1" lnClass="GAPC" doName="Ind1" fc="ST" />
+              <FCDA ldInst="M4" prefix="LBAY5" lnInst="1" lnClass="GAPC" doName="Ind2" fc="ST" />
+              <FCDA ldInst="M4" prefix="LBAY5" lnInst="1" lnClass="GAPC" doName="Ind3" fc="ST" />
+              <FCDA ldInst="M4" prefix="LBAY6" lnInst="1" lnClass="GAPC" doName="Ind1" fc="ST" />
+              <FCDA ldInst="M4" prefix="LBAY6" lnInst="1" lnClass="GAPC" doName="Ind2" fc="ST" />
+              <FCDA ldInst="M4" prefix="LBAY6" lnInst="1" lnClass="GAPC" doName="Ind3" fc="ST" />
+              <FCDA ldInst="M4" prefix="LBAY7" lnInst="1" lnClass="GAPC" doName="Ind1" fc="ST" />
+              <FCDA ldInst="M4" prefix="LBAY7" lnInst="1" lnClass="GAPC" doName="Ind2" fc="ST" />
+              <FCDA ldInst="M4" prefix="LBAY7" lnInst="1" lnClass="GAPC" doName="Ind3" fc="ST" />
+              <FCDA ldInst="M4" prefix="LBAY8" lnInst="1" lnClass="GAPC" doName="Ind1" fc="ST" />
+              <FCDA ldInst="M4" prefix="LBAY8" lnInst="1" lnClass="GAPC" doName="Ind2" fc="ST" />
+              <FCDA ldInst="M4" prefix="LBAY8" lnInst="1" lnClass="GAPC" doName="Ind3" fc="ST" />
+              <FCDA ldInst="M4" prefix="LBAY9" lnInst="1" lnClass="GAPC" doName="Ind1" fc="ST" />
+              <FCDA ldInst="M4" prefix="LBAY9" lnInst="1" lnClass="GAPC" doName="Ind2" fc="ST" />
+              <FCDA ldInst="M4" prefix="LBAY9" lnInst="1" lnClass="GAPC" doName="Ind3" fc="ST" />
+              <FCDA ldInst="M4" prefix="LBAY10" lnInst="1" lnClass="GAPC" doName="Ind1" fc="ST" />
+              <FCDA ldInst="M4" prefix="LBAY10" lnInst="1" lnClass="GAPC" doName="Ind2" fc="ST" />
+              <FCDA ldInst="M4" prefix="LBAY10" lnInst="1" lnClass="GAPC" doName="Ind3" fc="ST" />
+              <FCDA ldInst="M4" prefix="LBAY11" lnInst="1" lnClass="GAPC" doName="Ind1" fc="ST" />
+              <FCDA ldInst="M4" prefix="LBAY11" lnInst="1" lnClass="GAPC" doName="Ind2" fc="ST" />
+              <FCDA ldInst="M4" prefix="LBAY11" lnInst="1" lnClass="GAPC" doName="Ind3" fc="ST" />
+              <FCDA ldInst="M4" prefix="LBAY12" lnInst="1" lnClass="GAPC" doName="Ind1" fc="ST" />
+              <FCDA ldInst="M4" prefix="LBAY12" lnInst="1" lnClass="GAPC" doName="Ind2" fc="ST" />
+              <FCDA ldInst="M4" prefix="LBAY12" lnInst="1" lnClass="GAPC" doName="Ind3" fc="ST" />
+              <FCDA ldInst="M4" prefix="LBAY13" lnInst="1" lnClass="GAPC" doName="Ind1" fc="ST" />
+              <FCDA ldInst="M4" prefix="LBAY13" lnInst="1" lnClass="GAPC" doName="Ind2" fc="ST" />
+              <FCDA ldInst="M4" prefix="LBAY13" lnInst="1" lnClass="GAPC" doName="Ind3" fc="ST" />
+              <FCDA ldInst="M4" prefix="LBAY14" lnInst="1" lnClass="GAPC" doName="Ind1" fc="ST" />
+              <FCDA ldInst="M4" prefix="LBAY14" lnInst="1" lnClass="GAPC" doName="Ind2" fc="ST" />
+              <FCDA ldInst="M4" prefix="LBAY14" lnInst="1" lnClass="GAPC" doName="Ind3" fc="ST" />
+              <FCDA ldInst="M4" prefix="LBAY15" lnInst="1" lnClass="GAPC" doName="Ind1" fc="ST" />
+              <FCDA ldInst="M4" prefix="LBAY15" lnInst="1" lnClass="GAPC" doName="Ind2" fc="ST" />
+              <FCDA ldInst="M4" prefix="LBAY15" lnInst="1" lnClass="GAPC" doName="Ind3" fc="ST" />
+              <FCDA ldInst="M4" prefix="LBAY16" lnInst="1" lnClass="GAPC" doName="Ind1" fc="ST" />
+              <FCDA ldInst="M4" prefix="LBAY16" lnInst="1" lnClass="GAPC" doName="Ind2" fc="ST" />
+              <FCDA ldInst="M4" prefix="LBAY16" lnInst="1" lnClass="GAPC" doName="Ind3" fc="ST" />
+              <FCDA ldInst="M4" prefix="LBAY17" lnInst="1" lnClass="GAPC" doName="Ind1" fc="ST" />
+              <FCDA ldInst="M4" prefix="LBAY17" lnInst="1" lnClass="GAPC" doName="Ind2" fc="ST" />
+              <FCDA ldInst="M4" prefix="LBAY17" lnInst="1" lnClass="GAPC" doName="Ind3" fc="ST" />
+              <FCDA ldInst="M4" prefix="LBAY18" lnInst="1" lnClass="GAPC" doName="Ind1" fc="ST" />
+              <FCDA ldInst="M4" prefix="LBAY18" lnInst="1" lnClass="GAPC" doName="Ind2" fc="ST" />
+              <FCDA ldInst="M4" prefix="LBAY18" lnInst="1" lnClass="GAPC" doName="Ind3" fc="ST" />
+              <FCDA ldInst="M4" prefix="LBAY19" lnInst="1" lnClass="GAPC" doName="Ind1" fc="ST" />
+              <FCDA ldInst="M4" prefix="LBAY19" lnInst="1" lnClass="GAPC" doName="Ind2" fc="ST" />
+              <FCDA ldInst="M4" prefix="LBAY19" lnInst="1" lnClass="GAPC" doName="Ind3" fc="ST" />
+              <FCDA ldInst="M4" prefix="LBAY20" lnInst="1" lnClass="GAPC" doName="Ind1" fc="ST" />
+              <FCDA ldInst="M4" prefix="LBAY20" lnInst="1" lnClass="GAPC" doName="Ind2" fc="ST" />
+              <FCDA ldInst="M4" prefix="LBAY20" lnInst="1" lnClass="GAPC" doName="Ind3" fc="ST" />
+            </DataSet>
+            <DataSet name="ds_pdis" desc="">
+              <FCDA ldInst="M4" prefix="LSPS" lnInst="1" lnClass="GAPC" doName="Op1" fc="ST" />
+            </DataSet>
+            <ReportControl name="urcb_Anom" rptID="rep1" confRev="1" buffered="false" bufTime="100" intgPd="0" datSet="ds_Anom">
+              <TrgOps dchg="true" qchg="true" dupd="true" period="false" gi="true" />
+              <OptFields seqNum="true" reasonCode="true" dataRef="false" entryID="false" bufOvfl="false" timeStamp="true" dataSet="true" configRef="true" />
+              <RptEnabled max="3" />
+            </ReportControl>
+            <ReportControl name="urcb_stati" rptID="rep2" confRev="1" buffered="false" bufTime="100" intgPd="0" datSet="ds_stati">
+              <TrgOps dchg="true" qchg="true" dupd="true" period="false" gi="true" />
+              <OptFields seqNum="true" reasonCode="true" dataRef="false" entryID="false" bufOvfl="false" timeStamp="true" dataSet="true" configRef="true" />
+              <RptEnabled max="3" />
+            </ReportControl>
+            <ReportControl name="urcb_allarmi" rptID="rep3" confRev="1" buffered="false" bufTime="100" intgPd="0" datSet="ds_allarmi">
+              <TrgOps dchg="true" qchg="true" dupd="true" period="false" gi="true" />
+              <OptFields seqNum="true" reasonCode="true" dataRef="false" entryID="false" bufOvfl="false" timeStamp="true" dataSet="true" configRef="true" />
+              <RptEnabled max="3" />
+            </ReportControl>
+            <ReportControl name="urcb_misure" rptID="rep4" confRev="1" buffered="false" bufTime="100" intgPd="4000" datSet="ds_misure">
+              <TrgOps dchg="false" qchg="false" dupd="false" period="true" gi="true" />
+              <OptFields seqNum="true" reasonCode="true" dataRef="false" bufOvfl="false" timeStamp="true" dataSet="true" entryID="false" configRef="true" />
+              <RptEnabled max="3" />
+            </ReportControl>
+            <ReportControl name="urcb_misureUPDM" rptID="rep5" confRev="1" buffered="false" bufTime="100" intgPd="4000" datSet="ds_misureUPDM">
+              <TrgOps dchg="false" qchg="false" dupd="false" period="true" gi="true" />
+              <OptFields seqNum="true" reasonCode="true" dataRef="false" entryID="false" bufOvfl="false" timeStamp="true" dataSet="true" configRef="true" />
+              <RptEnabled max="3" />
+            </ReportControl>
+            <ReportControl name="urcb_AnomUPDM" rptID="rep6" confRev="1" buffered="false" bufTime="100" intgPd="0" datSet="ds_AnomUPDM">
+              <TrgOps dchg="true" qchg="true" dupd="true" period="false" gi="true" />
+              <OptFields seqNum="true" reasonCode="true" dataRef="false" entryID="false" bufOvfl="false" timeStamp="true" dataSet="true" configRef="true" />
+              <RptEnabled max="3" />
+            </ReportControl>
+            <ReportControl name="urcb_pdis" rptID="rep7" confRev="1" buffered="false" bufTime="100" intgPd="0" datSet="ds_pdis">
+              <TrgOps dchg="true" qchg="true" dupd="true" period="false" gi="true" />
+              <OptFields seqNum="true" reasonCode="true" dataRef="false" bufOvfl="false" timeStamp="true" dataSet="true" entryID="false" configRef="true" />
+              <RptEnabled max="3" />
+            </ReportControl>
+            <DOI name="Beh">
+              <DAI name="stVal">
+                <Val>on</Val>
+              </DAI>
+            </DOI>
+            <DOI name="Mod">
+              <DAI name="ctlModel">
+                <Val>sbo-with-normal-security</Val>
+              </DAI>
+            </DOI>
+            <GSEControl name="gse_GseUPDM" datSet="ds_GseUPDM" type="GOOSE" appID="5" fixedOffs="false" desc="Description" confRev="10000" />
+          </LN0>
+          <LN desc="description" prefix="LBMU" lnType="iGrid_3M01_EV_LPHD" lnClass="LPHD" inst="1">
+            <DOI name="PhyNam">
+              <DAI name="vendor">
+                <Val>iGrid</Val>
+              </DAI>
+            </DOI>
+            <DOI name="PhyHealth">
+              <DAI name="stVal">
+                <Val>Ok</Val>
+              </DAI>
+            </DOI>
+            <DOI name="Proxy">
+              <DAI name="stVal">
+                <Val>false</Val>
+              </DAI>
+            </DOI>
+            <DOI name="AnIO">
+              <DAI name="stVal" desc="Anoamalia Schede Input/Output BMUEV" />
+            </DOI>
+            <DOI name="AnSt">
+              <DAI name="stVal" desc="Anomalia Generica BMUEV" />
+            </DOI>
+            <DOI name="BlkPdSA">
+              <DAI name="stVal" desc="Blocco Unita' di misura Protezione di Sbarra A" />
+            </DOI>
+            <DOI name="BlkPdSB">
+              <DAI name="stVal" desc="Blocco Unita' di misura Protezione di Sbarra B" />
+            </DOI>
+          </LN>
+          <LN lnType="iGrid_3M01_EV_LTMS" lnClass="LTMS" inst="1" prefix="LBMU">
+            <DOI name="TmSynErr">
+              <DAI name="stVal" desc="Anomalia Sincronizzazione Oraria BMUEV" />
+            </DOI>
+          </LN>
+          <LN lnType="iGrid_3M01_EV_GAPC_5" lnClass="GAPC" inst="1" prefix="LSWT">
+            <DOI name="Alm1">
+              <DAI name="stVal" desc="Anomalia Switch" />
+            </DOI>
+          </LN>
+          <LN lnType="iGrid_3M01_EV_PTRC" lnClass="PTRC" inst="1" prefix="L87A">
+            <DOI name="Op">
+              <DAI name="general" desc="Intervento Protezione di Sbarra A" />
+            </DOI>
+          </LN>
+          <LN lnType="iGrid_3M01_EV_PTRC" lnClass="PTRC" inst="1" prefix="L87B">
+            <DOI name="Op">
+              <DAI name="general" desc="Intervento Protezione di Sbarra B" />
+            </DOI>
+          </LN>
+          <LN lnType="iGrid_3M01_EV_GAPC_5" lnClass="GAPC" inst="1" prefix="LPWR">
+            <DOI name="Alm1">
+              <DAI name="stVal" desc="Intervento M.A.I. per mancanza alimentazione" />
+            </DOI>
+          </LN>
+          <LN lnType="iGrid_3M01_EV_GAPC_1" lnClass="GAPC" inst="1" prefix="L87B">
+            <DOI name="Wrn1">
+              <DAI name="stVal" desc="Anomalia P.d.S. Unita' Centrale" />
+            </DOI>
+          </LN>
+          <LN lnType="iGrid_3M01_EV_GAPC_2" lnClass="GAPC" inst="1" prefix="L87PB">
+            <DOI name="Ind1">
+              <DAI name="stVal" desc="Prova protezione di sbarra" />
+            </DOI>
+          </LN>
+          <LN lnType="iGrid_3M01_EV_RBRF" lnClass="RBRF" inst="1" prefix="LBFA">
+            <DOI name="OpIn">
+              <DAI name="general" desc="Intervento M.A.I. sbarra A" />
+            </DOI>
+          </LN>
+          <LN lnType="iGrid_3M01_EV_RBRF" lnClass="RBRF" inst="1" prefix="LBFB">
+            <DOI name="OpIn">
+              <DAI name="general" desc="Intervento M.A.I. sbarra B" />
+            </DOI>
+          </LN>
+          <LN lnType="iGrid_3M01_EV_GAPC" lnClass="GAPC" inst="1" prefix="L81">
+            <DOI name="Op1">
+              <DAI name="general" desc="Comando apertura da Sistema di Difesa 1" />
+            </DOI>
+          </LN>
+          <LN lnType="iGrid_3M01_EV_GAPC" lnClass="GAPC" inst="2" prefix="L81">
+            <DOI name="Op1">
+              <DAI name="general" desc="Comando apertura da Sistema di Difesa 2" />
+            </DOI>
+          </LN>
+          <LN lnType="iGrid_3M01_EV_RDRE" lnClass="RDRE" inst="1" prefix="LDFR">
+            <DOI name="RcdStr">
+              <DAI name="stVal" desc="Avviamento Oscilloperturbografo" />
+            </DOI>
+          </LN>
+          <LN lnType="iGrid_3M01_EV_PTUF" lnClass="PTUF" inst="1" prefix="L81A">
+            <DOI name="Op">
+              <DAI name="general" desc="1 Livello intervento equilibratore di carico sbarra A" />
+            </DOI>
+          </LN>
+          <LN lnType="iGrid_3M01_EV_PTUF" lnClass="PTUF" inst="2" prefix="L81A">
+            <DOI name="Op">
+              <DAI name="general" desc="2 Livello intervento equilibratore di carico sbarra A" />
+            </DOI>
+          </LN>
+          <LN lnType="iGrid_3M01_EV_PTUF" lnClass="PTUF" inst="3" prefix="L81A">
+            <DOI name="Op">
+              <DAI name="general" desc="3 Livello intervento equilibratore di carico sbarra A" />
+            </DOI>
+          </LN>
+          <LN lnType="iGrid_3M01_EV_PTUF" lnClass="PTUF" inst="1" prefix="L81B">
+            <DOI name="Op">
+              <DAI name="general" desc="1 Livello intervento equilibratore di carico sbarra B" />
+            </DOI>
+          </LN>
+          <LN lnType="iGrid_3M01_EV_PTUF" lnClass="PTUF" inst="2" prefix="L81B">
+            <DOI name="Op">
+              <DAI name="general" desc="2 Livello intervento equilibratore di carico sbarra B" />
+            </DOI>
+          </LN>
+          <LN lnType="iGrid_3M01_EV_PTUF" lnClass="PTUF" inst="3" prefix="L81B">
+            <DOI name="Op">
+              <DAI name="general" desc="3 Livello intervento equilibratore di carico sbarra B" />
+            </DOI>
+          </LN>
+          <LN lnType="iGrid_3M01_EV_GGIO_1" lnClass="GGIO" inst="1" prefix="LME">
+            <DOI name="Ind3">
+              <DAI name="stVal" desc="Montante in Fuori Servizio o Escluso Sbarra A" />
+            </DOI>
+            <DOI name="SPCSO1">
+              <DAI name="ctlModel">
+                <Val>sbo-with-normal-security</Val>
+              </DAI>
+              <DAI name="stVal" desc="Montante Escluso da Scada" />
+            </DOI>
+            <DOI name="Ind4">
+              <DAI name="stVal" desc="Montante in Fuori Servizio o Escluso Sbarra B" />
+            </DOI>
+          </LN>
+          <LN lnType="iGrid_3M01_EV_MMXU" lnClass="MMXU" inst="1" prefix="LBAY">
+            <DOI name="Hz">
+              <SDI name="mag">
+                <DAI name="f" desc="Frequenza Sbarra A" />
+              </SDI>
+            </DOI>
+            <DOI name="PPV">
+              <SDI name="phsAB">
+                <SDI name="cVal">
+                  <SDI name="mag">
+                    <DAI name="f" desc="Tensione concatenata 4-8 Sbarra A" />
+                  </SDI>
+                </SDI>
+              </SDI>
+              <SDI name="phsBC">
+                <SDI name="cVal">
+                  <SDI name="mag">
+                    <DAI name="f" desc="Tensione concatenata 8-12 Sbarra A" />
+                  </SDI>
+                </SDI>
+              </SDI>
+              <SDI name="phsCA">
+                <SDI name="cVal">
+                  <SDI name="mag">
+                    <DAI name="f" desc="Tensione concatenata 4-12 Sbarra A" />
+                  </SDI>
+                </SDI>
+              </SDI>
+            </DOI>
+          </LN>
+          <LN lnType="iGrid_3M01_EV_MMXU" lnClass="MMXU" inst="2" prefix="LBAY">
+            <DOI name="Hz">
+              <SDI name="mag">
+                <DAI name="f" desc="Frequenza Sbarra B" />
+              </SDI>
+            </DOI>
+            <DOI name="PPV">
+              <SDI name="phsAB">
+                <SDI name="cVal">
+                  <SDI name="mag">
+                    <DAI name="f" desc="Tensione concatenata 4-8 Sbarra B" />
+                  </SDI>
+                </SDI>
+              </SDI>
+              <SDI name="phsBC">
+                <SDI name="cVal">
+                  <SDI name="mag">
+                    <DAI name="f" desc="Tensione concatenata 8-12 Sbarra B" />
+                  </SDI>
+                </SDI>
+              </SDI>
+              <SDI name="phsCA">
+                <SDI name="cVal">
+                  <SDI name="mag">
+                    <DAI name="f" desc="Tensione concatenata 4-12 Sbarra B" />
+                  </SDI>
+                </SDI>
+              </SDI>
+            </DOI>
+          </LN>
+          <LN lnType="iGrid_3M01_EV_GGIO" lnClass="GGIO" inst="1" prefix="DISP">
+            <DOI name="Ind1">
+              <DAI name="stVal" desc="Disponibile 1" />
+            </DOI>
+            <DOI name="Ind2">
+              <DAI name="stVal" desc="Disponibile 2" />
+            </DOI>
+            <DOI name="Ind3">
+              <DAI name="stVal" desc="Disponibile 3" />
+            </DOI>
+            <DOI name="Ind4">
+              <DAI name="stVal" desc="Disponibile 4" />
+            </DOI>
+            <DOI name="Ind5">
+              <DAI name="stVal" desc="Disponibile 5" />
+            </DOI>
+            <DOI name="Ind6">
+              <DAI name="stVal" desc="Disponibile 6" />
+            </DOI>
+            <DOI name="Ind7">
+              <DAI name="stVal" desc="Disponibile 7" />
+            </DOI>
+            <DOI name="Ind8">
+              <DAI name="stVal" desc="Disponibile 8" />
+            </DOI>
+            <DOI name="Ind9">
+              <DAI name="stVal" desc="Disponibile 9" />
+            </DOI>
+            <DOI name="Ind10">
+              <DAI name="stVal" desc="Disponibile 10" />
+            </DOI>
+          </LN>
+          <LN lnType="iGrid_3M01_EV_GAPC_4" lnClass="GAPC" inst="1" prefix="LBAY">
+            <DOI name="ISCSO1">
+              <DAI name="ctlModel">
+                <Val>sbo-with-normal-security</Val>
+              </DAI>
+            </DOI>
+            <DOI name="ISCSO2">
+              <DAI name="ctlModel">
+                <Val>sbo-with-normal-security</Val>
+              </DAI>
+            </DOI>
+            <DOI name="ISCSO3">
+              <DAI name="ctlModel">
+                <Val>sbo-with-normal-security</Val>
+              </DAI>
+            </DOI>
+            <DOI name="ISCSO4">
+              <DAI name="ctlModel">
+                <Val>sbo-with-normal-security</Val>
+              </DAI>
+            </DOI>
+          </LN>
+          <LN lnType="iGrid_3M01_EV_GAPC_3" lnClass="GAPC" inst="1" prefix="LBAY1" />
+          <LN lnType="iGrid_3M01_EV_GAPC_3" lnClass="GAPC" inst="1" prefix="LBAY2" />
+          <LN lnType="iGrid_3M01_EV_GAPC_3" lnClass="GAPC" inst="1" prefix="LBAY3" />
+          <LN lnType="iGrid_3M01_EV_GAPC_3" lnClass="GAPC" inst="1" prefix="LBAY4" />
+          <LN lnType="iGrid_3M01_EV_GAPC_3" lnClass="GAPC" inst="1" prefix="LBAY5" />
+          <LN lnType="iGrid_3M01_EV_GAPC_3" lnClass="GAPC" inst="1" prefix="LBAY6" />
+          <LN lnType="iGrid_3M01_EV_GAPC_3" lnClass="GAPC" inst="1" prefix="LBAY7" />
+          <LN lnType="iGrid_3M01_EV_GAPC_3" lnClass="GAPC" inst="1" prefix="LBAY8" />
+          <LN lnType="iGrid_3M01_EV_GAPC_3" lnClass="GAPC" inst="1" prefix="LBAY9" />
+          <LN lnType="iGrid_3M01_EV_GAPC_3" lnClass="GAPC" inst="1" prefix="LBAY10" />
+          <LN lnType="iGrid_3M01_EV_GAPC_3" lnClass="GAPC" inst="1" prefix="LBAY11" />
+          <LN lnType="iGrid_3M01_EV_GAPC_3" lnClass="GAPC" inst="1" prefix="LBAY12" />
+          <LN lnType="iGrid_3M01_EV_GAPC_3" lnClass="GAPC" inst="1" prefix="LBAY13" />
+          <LN lnType="iGrid_3M01_EV_GAPC_3" lnClass="GAPC" inst="1" prefix="LBAY14" />
+          <LN lnType="iGrid_3M01_EV_GAPC_3" lnClass="GAPC" inst="1" prefix="LBAY15" />
+          <LN lnType="iGrid_3M01_EV_GAPC_3" lnClass="GAPC" inst="1" prefix="LBAY16" />
+          <LN lnType="iGrid_3M01_EV_GAPC_3" lnClass="GAPC" inst="1" prefix="LBAY17" />
+          <LN lnType="iGrid_3M01_EV_GAPC_3" lnClass="GAPC" inst="1" prefix="LBAY18" />
+          <LN lnType="iGrid_3M01_EV_GAPC_3" lnClass="GAPC" inst="1" prefix="LBAY19" />
+          <LN lnType="iGrid_3M01_EV_GAPC_3" lnClass="GAPC" inst="1" prefix="LBAY20" />
+          <LN lnType="iGrid_3M01_EV_GAPC" lnClass="GAPC" inst="1" prefix="LMSBA">
+            <DOI name="Op1">
+              <DAI name="general" desc="Blocco Sbarra A da Messa In Sicurezza del Blindato (MSB)" />
+            </DOI>
+          </LN>
+          <LN lnType="iGrid_3M01_EV_GAPC" lnClass="GAPC" inst="1" prefix="LMSBB">
+            <DOI name="Op1">
+              <DAI name="general" desc="Blocco Sbarra B da Messa In Sicurezza del Blindato (MSB)" />
+            </DOI>
+          </LN>
+          <LN lnType="iGrid_3M01_EV_GAPC" lnClass="GAPC" inst="1" prefix="LSPS">
+            <DOI name="Op1">
+              <DAI name="general" desc="Intervento Logica di Soccorso Alla Prot. di Sbarra (LSPS)" />
+            </DOI>
+          </LN>
+          <LN lnType="iGrid_3M01_EV_SIMG" lnClass="SIMG" inst="2" prefix="LSF6SA">
+            <DOI name="InsAlm">
+              <DAI name="stVal" desc="2o livello bassa pressione SF6 comparti sbarra A" />
+            </DOI>
+          </LN>
+          <LN lnType="iGrid_3M01_EV_SIMG" lnClass="SIMG" inst="2" prefix="LSF6SB">
+            <DOI name="InsAlm">
+              <DAI name="stVal" desc="2o livello bassa pressione SF6 comparti sbarra B" />
+            </DOI>
+          </LN>
+          <LN lnType="iGrid_3M01_EV_PTUF" lnClass="PTUF" inst="1" prefix="LEACA">
+            <DOI name="Op">
+              <DAI name="general" desc="Intervento equilibratore di carico sbarra A" />
+            </DOI>
+          </LN>
+          <LN lnType="iGrid_3M01_EV_PTUF" lnClass="PTUF" inst="1" prefix="LEACB">
+            <DOI name="Op">
+              <DAI name="general" desc="Intervento equilibratore di carico sbarra B" />
+            </DOI>
+          </LN>
+          <LN lnType="iGrid_3M01_EV_CALH" lnClass="CALH" inst="2" prefix="LPWRT" />
+          <LN lnType="iGrid_3M01_EV_GAPC" lnClass="GAPC" inst="1" prefix="LAUT" />
+          <LN lnType="iGrid_3M01_EV_SIMG_1" lnClass="SIMG" inst="1" prefix="LSF6" />
+        </LDevice>
+      </Server>
+    </AccessPoint>
+  </IED>
+  <DataTypeTemplates>
+    <LNodeType id="iGrid_3M01_EV_GGIO" lnClass="GGIO">
+      <DO name="Beh" type="iGrid_3M01_EV_ENS" />
+      <DO name="EEHealth" type="iGrid_3M01_EV_ENS_Health" />
+      <DO name="Ind1" type="iGrid_3M01_EV_SPS" />
+      <DO name="Ind2" type="iGrid_3M01_EV_SPS" />
+      <DO name="Ind3" type="iGrid_3M01_EV_SPS" />
+      <DO name="Ind4" type="iGrid_3M01_EV_SPS" />
+      <DO name="Ind5" type="iGrid_3M01_EV_SPS" />
+      <DO name="Ind6" type="iGrid_3M01_EV_SPS" />
+      <DO name="Ind7" type="iGrid_3M01_EV_SPS" />
+      <DO name="Ind8" type="iGrid_3M01_EV_SPS" />
+      <DO name="Ind9" type="iGrid_3M01_EV_SPS" />
+      <DO name="Ind10" type="iGrid_3M01_EV_SPS" />
+    </LNodeType>
+    <LNodeType id="iGrid_3M01_EV_PTUF" lnClass="PTUF">
+      <DO name="Beh" type="iGrid_3M01_EV_ENS" />
+      <DO name="Str" type="iGrid_3M01_EV_ACD" />
+      <DO name="Op" type="iGrid_3M01_EV_ACT" />
+    </LNodeType>
+    <LNodeType id="iGrid_3M01_EV_GAPC" lnClass="GAPC">
+      <DO name="Beh" type="iGrid_3M01_EV_ENS" />
+      <DO name="Str1" type="iGrid_3M01_EV_ACD" />
+      <DO name="Op1" type="iGrid_3M01_EV_ACT" />
+    </LNodeType>
+    <LNodeType id="iGrid_3M01_EV_PTRC" lnClass="PTRC">
+      <DO name="Beh" type="iGrid_3M01_EV_ENS" />
+      <DO name="Op" type="iGrid_3M01_EV_ACT" />
+    </LNodeType>
+    <LNodeType id="iGrid_3M01_EV_GAPC_1" lnClass="GAPC">
+      <DO name="Beh" type="iGrid_3M01_EV_ENS" />
+      <DO name="Str1" type="iGrid_3M01_EV_ACD" />
+      <DO name="Op1" type="iGrid_3M01_EV_ACT" />
+      <DO name="Wrn1" type="iGrid_3M01_EV_SPS" />
+    </LNodeType>
+    <LNodeType id="iGrid_3M01_EV_GAPC_2" lnClass="GAPC">
+      <DO name="Beh" type="iGrid_3M01_EV_ENS" />
+      <DO name="Str1" type="iGrid_3M01_EV_ACD" />
+      <DO name="Op1" type="iGrid_3M01_EV_ACT" />
+      <DO name="Ind1" type="iGrid_3M01_EV_SPS" />
+    </LNodeType>
+    <LNodeType id="iGrid_3M01_EV_GAPC_3" lnClass="GAPC">
+      <DO name="Beh" type="iGrid_3M01_EV_ENS" />
+      <DO name="Str1" type="iGrid_3M01_EV_ACD" />
+      <DO name="Op1" type="iGrid_3M01_EV_ACT" />
+      <DO name="Ind1" type="iGrid_3M01_EV_SPS" />
+      <DO name="Ind2" type="iGrid_3M01_EV_SPS" />
+      <DO name="Ind3" type="iGrid_3M01_EV_SPS" />
+    </LNodeType>
+    <LNodeType id="iGrid_3M01_EV_GAPC_4" lnClass="GAPC">
+      <DO name="Beh" type="iGrid_3M01_EV_ENS" />
+      <DO name="Str1" type="iGrid_3M01_EV_ACD" />
+      <DO name="Op1" type="iGrid_3M01_EV_ACT" />
+      <DO name="ISCSO1" type="iGrid_3M01_EV_INC" />
+      <DO name="ISCSO2" type="iGrid_3M01_EV_INC" />
+      <DO name="ISCSO3" type="iGrid_3M01_EV_INC" />
+      <DO name="ISCSO4" type="iGrid_3M01_EV_INC" />
+    </LNodeType>
+    <LNodeType id="iGrid_3M01_EV_MMXU" lnClass="MMXU">
+      <DO name="Beh" type="iGrid_3M01_EV_ENS" />
+      <DO name="Hz" type="iGrid_3M01_EV_MV" />
+      <DO name="PPV" type="iGrid_3M01_EV_DEL" />
+      <DO name="PhV" type="iGrid_3M01_EV_WYE" />
+    </LNodeType>
+    <LNodeType id="iGrid_3M01_EV_RBRF" lnClass="RBRF">
+      <DO name="Beh" type="iGrid_3M01_EV_ENS" />
+      <DO name="OpIn" type="iGrid_3M01_EV_ACT" />
+    </LNodeType>
+    <LNodeType id="iGrid_3M01_EV_LPHD" lnClass="LPHD">
+      <DO name="PhyNam" type="iGrid_3M01_EV_DPL" />
+      <DO name="PhyHealth" type="iGrid_3M01_EV_ENS_Health" />
+      <DO name="Proxy" type="iGrid_3M01_EV_SPS" />
+      <DO name="BlkPdSA" type="iGrid_3M01_EV_SPS" />
+      <DO name="BlkPdSB" type="iGrid_3M01_EV_SPS" />
+      <DO name="AnIO" type="iGrid_3M01_EV_SPS" />
+      <DO name="AnSt" type="iGrid_3M01_EV_SPS" />
+    </LNodeType>
+    <LNodeType id="iGrid_3M01_EV_LTMS" lnClass="LTMS">
+      <DO name="Beh" type="iGrid_3M01_EV_ENS" />
+      <DO name="TmSynErr" type="iGrid_3M01_EV_SPS" />
+    </LNodeType>
+    <LNodeType id="iGrid_3M01_EV_RDRE" lnClass="RDRE">
+      <DO name="Beh" type="iGrid_3M01_EV_ENS" />
+      <DO name="RcdMade" type="iGrid_3M01_EV_SPS" />
+      <DO name="FltNum" type="iGrid_3M01_EV_INS" />
+      <DO name="RcdStr" type="iGrid_3M01_EV_SPS" />
+    </LNodeType>
+    <LNodeType id="iGrid_3M01_EV_LLN0" lnClass="LLN0">
+      <DO name="NamPlt" type="iGrid_3M01_EV_LPL" />
+      <DO name="Beh" type="iGrid_3M01_EV_ENS" />
+      <DO name="Health" type="iGrid_3M01_EV_ENS_Health" />
+      <DO name="Mod" type="iGrid_3M01_EV_ENC" />
+    </LNodeType>
+    <LNodeType id="iGrid_3M01_EV_GGIO_1" lnClass="GGIO">
+      <DO name="Beh" type="iGrid_3M01_EV_ENS" />
+      <DO name="EEHealth" type="iGrid_3M01_EV_ENS_Health" />
+      <DO name="Ind3" type="iGrid_3M01_EV_SPS" />
+      <DO name="Ind4" type="iGrid_3M01_EV_SPS" />
+      <DO name="SPCSO1" type="iGrid_3M01_EV_SPC" />
+    </LNodeType>
+    <LNodeType id="iGrid_3M01_EV_GAPC_5" lnClass="GAPC">
+      <DO name="Beh" type="iGrid_3M01_EV_ENS" />
+      <DO name="Str1" type="iGrid_3M01_EV_ACD" />
+      <DO name="Op1" type="iGrid_3M01_EV_ACT" />
+      <DO name="Alm1" type="iGrid_3M01_EV_SPS" />
+    </LNodeType>
+    <LNodeType id="iGrid_3M01_EV_CALH" lnClass="CALH">
+      <DO name="Beh" type="iGrid_3M01_EV_ENS" />
+      <DO name="GrAlm" type="iGrid_3M01_EV_SPS" />
+    </LNodeType>
+    <LNodeType id="iGrid_3M01_EV_SIMG" lnClass="SIMG">
+      <DO name="Beh" type="iGrid_3M01_EV_ENS" />
+      <DO name="InsAlm" type="iGrid_3M01_EV_SPS" />
+    </LNodeType>
+    <LNodeType id="iGrid_3M01_EV_SIMG_1" lnClass="SIMG">
+      <DO name="Beh" type="iGrid_3M01_EV_ENS" />
+      <DO name="InsAlm" type="iGrid_3M01_EV_SPS" />
+      <DO name="PresAlm" type="iGrid_3M01_EV_SPS" />
+    </LNodeType>
+    <DOType id="iGrid_3M01_EV_ENS" cdc="ENS">
+      <DA name="stVal" fc="ST" bType="Enum" type="Beh" dchg="true" dupd="true" />
+      <DA name="q" fc="ST" bType="Quality" qchg="true" />
+      <DA name="t" fc="ST" bType="Timestamp" />
+    </DOType>
+    <DOType id="iGrid_3M01_EV_ENS_Health" cdc="ENS">
+      <DA name="stVal" fc="ST" bType="Enum" type="Health" dchg="true" dupd="true" />
+      <DA name="q" fc="ST" bType="Quality" qchg="true" />
+      <DA name="t" fc="ST" bType="Timestamp" />
+    </DOType>
+    <DOType id="iGrid_3M01_EV_SPS" cdc="SPS">
+      <DA name="stVal" fc="ST" bType="BOOLEAN" dchg="true" />
+      <DA name="q" fc="ST" bType="Quality" qchg="true" />
+      <DA name="t" fc="ST" bType="Timestamp" />
+    </DOType>
+    <DOType id="iGrid_3M01_EV_ACT" cdc="ACT">
+      <DA name="general" fc="ST" bType="BOOLEAN" dchg="true" />
+      <DA name="q" fc="ST" bType="Quality" qchg="true" />
+      <DA name="t" fc="ST" bType="Timestamp" />
+    </DOType>
+    <DOType id="iGrid_3M01_EV_ACD" cdc="ACD">
+      <DA name="general" fc="ST" bType="BOOLEAN" dchg="true" />
+      <DA name="dirGeneral" fc="ST" bType="Enum" type="dirGeneralEnum" dchg="true" />
+      <DA name="q" fc="ST" bType="Quality" qchg="true" />
+      <DA name="t" fc="ST" bType="Timestamp" />
+    </DOType>
+    <DOType id="iGrid_3M01_EV_INC" cdc="INC">
+      <DA name="Oper" fc="CO" bType="Struct" type="iGrid_3M01_EV_INCOperate" />
+      <DA name="stVal" fc="ST" bType="INT32" dchg="true" />
+      <DA name="ctlModel" fc="CF" bType="Enum" type="ctlModelEnum" />
+    </DOType>
+    <DOType id="iGrid_3M01_EV_MV" cdc="MV">
+      <DA name="mag" fc="MX" bType="Struct" type="iGrid_3M01_EV_AnalogueValue" dchg="true" />
+      <DA name="q" fc="MX" bType="Quality" qchg="true" />
+      <DA name="t" fc="MX" bType="Timestamp" />
+    </DOType>
+    <DOType id="iGrid_3M01_EV_CMV" cdc="CMV">
+      <DA name="q" fc="MX" bType="Quality" qchg="true" />
+      <DA name="t" fc="MX" bType="Timestamp" />
+    </DOType>
+    <DOType id="iGrid_3M01_EV_CMV_1" cdc="CMV">
+      <DA name="cVal" fc="MX" bType="Struct" type="iGrid_3M01_EV_Vector" dchg="true" />
+      <DA name="q" fc="MX" bType="Quality" qchg="true" />
+      <DA name="t" fc="MX" bType="Timestamp" />
+    </DOType>
+    <DOType id="iGrid_3M01_EV_WYE" cdc="WYE">
+      <SDO name="phsA" type="iGrid_3M01_EV_CMV_1" />
+      <SDO name="phsB" type="iGrid_3M01_EV_CMV_1" />
+      <SDO name="phsC" type="iGrid_3M01_EV_CMV_1" />
+      <SDO name="neut" type="iGrid_3M01_EV_CMV" />
+      <SDO name="net" type="iGrid_3M01_EV_CMV" />
+      <SDO name="res" type="iGrid_3M01_EV_CMV" />
+    </DOType>
+    <DOType id="iGrid_3M01_EV_DEL" cdc="DEL">
+      <SDO name="phsAB" type="iGrid_3M01_EV_CMV_1" />
+      <SDO name="phsBC" type="iGrid_3M01_EV_CMV_1" />
+      <SDO name="phsCA" type="iGrid_3M01_EV_CMV_1" />
+    </DOType>
+    <DOType id="iGrid_3M01_EV_DPL" cdc="DPL">
+      <DA name="vendor" fc="DC" bType="VisString255" />
+    </DOType>
+    <DOType id="iGrid_3M01_EV_INS" cdc="INS">
+      <DA name="stVal" fc="ST" bType="INT32" dchg="true" />
+      <DA name="q" fc="ST" bType="Quality" qchg="true" />
+      <DA name="t" fc="ST" bType="Timestamp" />
+    </DOType>
+    <DOType id="iGrid_3M01_EV_ENC" cdc="ENC">
+      <DA name="stVal" fc="ST" bType="Enum" type="Mod" dchg="true" />
+      <DA name="q" fc="ST" bType="Quality" qchg="true" />
+      <DA name="t" fc="ST" bType="Timestamp" />
+      <DA name="ctlModel" fc="CF" bType="Enum" type="ctlModelEnum" />
+    </DOType>
+    <DOType id="iGrid_3M01_EV_LPL" cdc="LPL">
+      <DA name="vendor" fc="DC" bType="VisString255" />
+      <DA name="swRev" fc="DC" bType="VisString255" />
+      <DA name="d" fc="DC" bType="VisString255" />
+    </DOType>
+    <DOType id="iGrid_3M01_EV_SPC" cdc="SPC">
+      <DA name="Oper" fc="CO" bType="Struct" type="iGrid_3M01_EV_SPCOperate" />
+      <DA name="stVal" fc="ST" bType="BOOLEAN" dchg="true" />
+      <DA name="q" fc="ST" bType="Quality" qchg="true" />
+      <DA name="t" fc="ST" bType="Timestamp" />
+      <DA name="ctlModel" fc="CF" bType="Enum" type="ctlModelEnum" />
+    </DOType>
+    <DAType id="iGrid_3M01_EV_Originator">
+      <BDA name="orCat" bType="Enum" type="orCatEnum" />
+      <BDA name="orIdent" bType="Octet64" />
+    </DAType>
+    <DAType id="iGrid_3M01_EV_INCOperate">
+      <BDA name="ctlVal" bType="INT32" />
+      <BDA name="origin" bType="Struct" type="iGrid_3M01_EV_Originator" />
+      <BDA name="ctlNum" bType="INT8U" />
+      <ProtNs type="8-MMS">IEC 61850-8-1:2003</ProtNs>
+    </DAType>
+    <DAType id="iGrid_3M01_EV_AnalogueValue">
+      <BDA name="f" bType="FLOAT32" />
+    </DAType>
+    <DAType id="iGrid_3M01_EV_Vector">
+      <BDA name="mag" bType="Struct" type="iGrid_3M01_EV_AnalogueValue" />
+    </DAType>
+    <DAType id="iGrid_3M01_EV_SPCOperate">
+      <BDA name="ctlVal" bType="BOOLEAN" />
+      <BDA name="origin" bType="Struct" type="iGrid_3M01_EV_Originator" />
+      <BDA name="ctlNum" bType="INT8U" />
+      <ProtNs type="8-MMS">IEC 61850-8-1:2003</ProtNs>
+    </DAType>
+    <EnumType id="Beh">
+      <EnumVal ord="1">on</EnumVal>
+      <EnumVal ord="2">blocked</EnumVal>
+      <EnumVal ord="3">test</EnumVal>
+      <EnumVal ord="4">test/blocked</EnumVal>
+      <EnumVal ord="5">off</EnumVal>
+    </EnumType>
+    <EnumType id="Health">
+      <EnumVal ord="1">Ok</EnumVal>
+      <EnumVal ord="2">Warning</EnumVal>
+      <EnumVal ord="3">Alarm</EnumVal>
+    </EnumType>
+    <EnumType id="dirGeneralEnum">
+      <EnumVal ord="0">unknown</EnumVal>
+      <EnumVal ord="1">forward</EnumVal>
+      <EnumVal ord="2">backward</EnumVal>
+      <EnumVal ord="3">both</EnumVal>
+    </EnumType>
+    <EnumType id="ctlModelEnum">
+      <EnumVal ord="0">status-only</EnumVal>
+      <EnumVal ord="1">direct-with-normal-security</EnumVal>
+      <EnumVal ord="2">sbo-with-normal-security</EnumVal>
+      <EnumVal ord="3">direct-with-enhanced-security</EnumVal>
+      <EnumVal ord="4">sbo-with-enhanced-security</EnumVal>
+    </EnumType>
+    <EnumType id="orCatEnum">
+      <EnumVal ord="0">not-supported</EnumVal>
+      <EnumVal ord="1">bay-control</EnumVal>
+      <EnumVal ord="2">station-control</EnumVal>
+      <EnumVal ord="3">remote-control</EnumVal>
+      <EnumVal ord="4">automatic-bay</EnumVal>
+      <EnumVal ord="5">automatic-station</EnumVal>
+      <EnumVal ord="6">automatic-remote</EnumVal>
+      <EnumVal ord="7">maintenance</EnumVal>
+      <EnumVal ord="8">process</EnumVal>
+    </EnumType>
+    <EnumType id="Mod">
+      <EnumVal ord="1">on</EnumVal>
+      <EnumVal ord="2">blocked</EnumVal>
+      <EnumVal ord="3">test</EnumVal>
+      <EnumVal ord="4">test/blocked</EnumVal>
+      <EnumVal ord="5">off</EnumVal>
+    </EnumType>
+  </DataTypeTemplates>
+</SCL>

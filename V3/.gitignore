@@ -1,0 +1,12 @@
+*.exe
+*.pdb
+*.zip
+
+GENERATI/
+bin/
+obj/
+publish/
+
+.vs/
+*.user
+*.suo

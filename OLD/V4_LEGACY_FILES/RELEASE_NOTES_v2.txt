@@ -1,0 +1,18 @@
+Crea CPRJ Montante v2.0.0
+Data: 2026-04-23
+
+Novita'
+- Le sostituzioni vengono applicate a tutti i file rilevati come testo dentro il .cprj, indipendentemente dall'estensione.
+- La scansione del template ora e' ricorsiva e preserva la struttura interna dell'archivio.
+- I file binari vengono copiati senza modifiche.
+- Le cartelle interne, per esempio directory tecniche come ZPLC, vengono mantenute e non rinominate.
+- Il log mostra i file testuali modificati e il numero di sostituzioni applicate.
+
+Compatibilita'
+- Restano disponibili le due modalita' esistenti: Sostituzioni Generiche e Progetti da CSV.
+- La sostituzione del nome montante nei nomi file resta limitata al nome del file, senza modificare i nomi delle cartelle.
+- La generazione continua a creare file .cprj nella cartella output scelta.
+
+Note operative
+- Se un file non testuale contiene sequenze simili a testo, viene trattato come binario quando presenta indicatori tipici di contenuto non testuale.
+- La versione v1 non viene sovrascritta: questa release viene pubblicata in una nuova cartella portable_v2.

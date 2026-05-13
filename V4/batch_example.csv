@@ -1,0 +1,4 @@
+TargetName;TargetIp;TemplateCode;TargetCode;ExtraFind;ExtraReplace;OutputName
+3M12;10.16.26.57;PTOV;TNOT;;;
+3M13;10.16.26.73;PTOV;TNOT;3M13Fa;3M13Dd;
+3M14;10.16.26.89;PTOV;TNOT;;;

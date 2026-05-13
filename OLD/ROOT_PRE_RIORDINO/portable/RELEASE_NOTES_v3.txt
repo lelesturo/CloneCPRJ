@@ -1,0 +1,20 @@
+RELEASE NOTES v3.0.0
+
+- Aggiunta tab "CSV generico".
+- Rinomina tab "Progetti da CSV" in "Progetti DIGIS da CSV".
+- Il CSV generico e' senza intestazioni: tutte le righe sono dati.
+- L'analisi mostra C1, C2, C3 con anteprima del primo valore.
+- L'analisi stampa nel log ogni riga del CSV con i valori C1, C2, C3...
+- La griglia mapping usa la logica:
+  Colonna CSV -> Testo template da sostituire
+- La colonna CSV puo' essere un nome intestazione oppure un numero 1-based: 1, 2, 3...
+- La checkbox "Nome file" decide quale colonna usare per nominare il .cprj generato per ogni riga.
+- Una riga "Nome file" con testo template vuoto viene usata solo per il nome file e non genera sostituzioni.
+
+Esempio:
+CSV:
+L465;172.26.135.60;L465_rev1_20260429
+Mapping:
+1 -> 3M11
+2 -> 12345
+3 -> cane
