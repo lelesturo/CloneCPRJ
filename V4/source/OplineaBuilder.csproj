@@ -7,14 +7,15 @@
     <Nullable>enable</Nullable>
     <AssemblyName>CreaCprjMontante</AssemblyName>
     <RootNamespace>CreaCprjMontante</RootNamespace>
-    <Version>4.0.0</Version>
-    <AssemblyVersion>4.0.0.0</AssemblyVersion>
-    <FileVersion>4.0.0.0</FileVersion>
-    <InformationalVersion>4.0.0-excel-input</InformationalVersion>
+    <Version>4.0.2</Version>
+    <AssemblyVersion>4.0.2.0</AssemblyVersion>
+    <FileVersion>4.0.2.0</FileVersion>
+    <InformationalVersion>4.0.2-excel-template</InformationalVersion>
   </PropertyGroup>
   <ItemGroup>
     <Compile Remove="**\*- Copy.cs" />
     <PackageReference Include="ExcelDataReader" Version="3.7.0" />
+    <PackageReference Include="NPOI" Version="2.8.0" />
     <PackageReference Include="System.Text.Encoding.CodePages" Version="10.0.0" />
   </ItemGroup>
 </Project>

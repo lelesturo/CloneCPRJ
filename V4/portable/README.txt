@@ -1,5 +1,8 @@
 CREA CPRJ MONTANTE
 
+Versione 4.0.2
+- La tab "Sostituzioni Generiche" puo' modificare template Excel .xls, .xlsx e .xlsm sostituendo testi nelle celle.
+
 Versione 4.0.0
 - Le tab "Progetti DIGIS da file" e "File generico" leggono CSV, XLSX, XLSM e XLS.
 - La CLI continua a usare l'opzione --csv, ma ora accetta anche file Excel.
@@ -48,6 +51,7 @@ Versione 2.0.0
 - CSV: Montante;Dispositivo;IP;Label opzionale
 - Il tool rileva il tipo progetto dal template (OP/AS1/EV) e aggiorna:
   - IP server nel rtu.ccx
+  - IP server nei file .cid, incluso il valore <P type="IP">...</P>
   - IP client nei file IED_m61850_x.ccx rilevati dal template, per client OP/AS1/EV (se presenti)
   - LABEL_BCU in states.ccx per template AS/AS1, usando la Label della riga AS/AS1
 - Quadriletterale base/nuovo (opz.): es. PTOV -> TNOT.

@@ -1,3 +1,11 @@
+CreaCprjMontante UI v4.0.2
+
+- La tab Sostituzioni Generiche puo' modificare template Excel .xls, .xlsx e .xlsm sostituendo testi nelle celle.
+
+CreaCprjMontante UI v4.0.1
+
+- Aggiornamento IP server anche nei file .cid, incluso il parametro <P type="IP">...</P>.
+
 CreaCprjMontante UI v4.0
 
 - Aggiunta lettura file Excel: .xlsx, .xlsm, .xls.

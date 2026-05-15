@@ -2,6 +2,12 @@
 
 ## Struttura cartelle
 
+Cartella di lavoro ufficiale:
+
+```text
+C:\CONFIGURATORE\CLONCPRJ
+```
+
 Il root del progetto deve contenere solo:
 
 ```text
@@ -15,6 +21,22 @@ V5/
 - Ogni versione attiva vive in una cartella dedicata `Vx`.
 - Le versioni non piu attive o i file legacy vanno in `OLD/`.
 - Non modificare direttamente una versione vecchia per creare una nuova versione: copia la versione di partenza in una nuova cartella `Vx`.
+- Non usare piu il percorso OneDrive come cartella di lavoro.
+
+## Struttura interna versione
+
+Ogni cartella versione attiva, per esempio `V4`, deve contenere solo:
+
+```text
+portable/
+source/
+CreaCprj_v4.zip
+```
+
+- `source/`: contiene solo sorgenti e file necessari alla compilazione. Non deve contenere `bin/`, `obj/` o file `- Copy`.
+- `portable/`: contiene l'eseguibile pronto all'uso e la documentazione della versione. Non deve contenere `.pdb`, vecchie release notes o file `- Copy`.
+- `CreaCprj_vx.zip`: contiene solo il contenuto portable da distribuire, cioe eseguibile, `README.txt` e release notes della versione.
+- Non lasciare nella root della versione file esterni come `.sln`, `.gitignore`, esempi CSV, README duplicati o `.exe` sciolti.
 
 ## Regola branch
 
@@ -39,7 +61,7 @@ Per pubblicare tutti i branch versione dopo aver configurato `origin`:
 Esempio per creare `V5` partendo da `V4`:
 
 ```powershell
-cd "C:\Users\Dennis Lelekumo\OneDrive - Thytronic\Desktop\WORK\CONFIGURATORE\CLONCPRJ"
+cd "C:\CONFIGURATORE\CLONCPRJ"
 
 git checkout main
 Copy-Item -LiteralPath ".\V4" -Destination ".\V5" -Recurse

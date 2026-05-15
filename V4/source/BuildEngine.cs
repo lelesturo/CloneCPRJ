@@ -3,6 +3,7 @@ using System.Text.RegularExpressions;
 using System.Text;
 using System.Xml.Linq;
 using ExcelDataReader;
+using NPOI.SS.UserModel;
 
 namespace CreaCprjMontante;
 
@@ -271,6 +272,13 @@ internal static class CprjGenerator
                 ["rtu.ccx"] = [new TextReplacement(inspection.ServerIp, targetServerIp)]
             };
 
+            foreach (var cidFile in templateFiles.Where(file =>
+                         !file.IsDirectory &&
+                         Path.GetExtension(file.RelativePath).Equals(".cid", StringComparison.OrdinalIgnoreCase)))
+            {
+                fileSpecific[cidFile.RelativePath] = [new TextReplacement(inspection.ServerIp, targetServerIp)];
+            }
+
             foreach (var client in inspection.Clients)
             {
                 if (!project.DeviceIps.TryGetValue(client.DeviceType, out var targetClientIp))
@@ -512,7 +520,9 @@ internal static class CprjGenerator
         var failures = new List<string>();
         var sourceFileName = Path.GetFileName(sourceFilePath);
 
-        log?.Invoke($"File testo sorgente: {sourceFilePath}");
+        var isExcelWorkbook = IsEditableExcelWorkbook(sourceFilePath);
+
+        log?.Invoke(isExcelWorkbook ? $"File Excel sorgente: {sourceFilePath}" : $"File testo sorgente: {sourceFilePath}");
         log?.Invoke($"Output: {outputDirectory}");
         log?.Invoke($"Find principale: {baseFind}");
         log?.Invoke($"Righe da generare: {jobs.Count}");
@@ -532,17 +542,28 @@ internal static class CprjGenerator
 
             try
             {
-                var bytes = File.ReadAllBytes(sourceFilePath);
-                if (!TryDecodeText(bytes, out var content, out var encoding))
+                if (isExcelWorkbook)
                 {
-                    throw new InvalidOperationException($"Il file non sembra testuale: {sourceFileName}");
+                    Directory.CreateDirectory(Path.GetDirectoryName(outputPath) ?? outputDirectory);
+                    File.Copy(sourceFilePath, outputPath, true);
+                    var replacementCount = ApplyExcelWorkbookReplacements(outputPath, replacements);
+                    createdFiles.Add(outputPath);
+                    log?.Invoke($"Creato file Excel: {outputPath} ({replacementCount} sostituzioni)");
                 }
+                else
+                {
+                    var bytes = File.ReadAllBytes(sourceFilePath);
+                    if (!TryDecodeText(bytes, out var content, out var encoding))
+                    {
+                        throw new InvalidOperationException($"Il file non sembra testuale: {sourceFileName}");
+                    }
 
-                content = ApplyReplacements(content, replacements, out var replacementCount);
-                Directory.CreateDirectory(Path.GetDirectoryName(outputPath) ?? outputDirectory);
-                File.WriteAllText(outputPath, content, encoding);
-                createdFiles.Add(outputPath);
-                log?.Invoke($"Creato file testo: {outputPath} ({replacementCount} sostituzioni)");
+                    content = ApplyReplacements(content, replacements, out var replacementCount);
+                    Directory.CreateDirectory(Path.GetDirectoryName(outputPath) ?? outputDirectory);
+                    File.WriteAllText(outputPath, content, encoding);
+                    createdFiles.Add(outputPath);
+                    log?.Invoke($"Creato file testo: {outputPath} ({replacementCount} sostituzioni)");
+                }
             }
             catch (Exception ex)
             {
@@ -557,6 +578,82 @@ internal static class CprjGenerator
         }
 
         return createdFiles;
+    }
+
+    private static bool IsEditableExcelWorkbook(string filePath)
+    {
+        var extension = Path.GetExtension(filePath);
+        return extension.Equals(".xlsx", StringComparison.OrdinalIgnoreCase) ||
+            extension.Equals(".xlsm", StringComparison.OrdinalIgnoreCase) ||
+            extension.Equals(".xls", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static int ApplyExcelWorkbookReplacements(string workbookPath, IReadOnlyList<TextReplacement> replacements)
+    {
+        var replacementCount = 0;
+
+        IWorkbook workbook;
+        using (var input = File.OpenRead(workbookPath))
+        {
+            workbook = WorkbookFactory.Create(input);
+        }
+
+        for (var sheetIndex = 0; sheetIndex < workbook.NumberOfSheets; sheetIndex++)
+        {
+            var sheet = workbook.GetSheetAt(sheetIndex);
+            if (sheet is null)
+            {
+                continue;
+            }
+
+            foreach (IRow row in sheet)
+            {
+                foreach (ICell cell in row)
+                {
+                    if (cell.CellType == CellType.String)
+                    {
+                        var original = cell.StringCellValue;
+                        var updated = ApplyReplacements(original, replacements, out var cellReplacementCount);
+                        if (cellReplacementCount > 0)
+                        {
+                            cell.SetCellValue(updated);
+                            replacementCount += cellReplacementCount;
+                        }
+                    }
+                    else if (cell.CellType == CellType.Formula)
+                    {
+                        var originalFormula = cell.CellFormula;
+                        var updatedFormula = ApplyReplacements(originalFormula, replacements, out var formulaReplacementCount);
+                        if (formulaReplacementCount > 0)
+                        {
+                            cell.SetCellFormula(updatedFormula);
+                            replacementCount += formulaReplacementCount;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (replacementCount > 0)
+        {
+            var tempPath = Path.Combine(Path.GetDirectoryName(workbookPath) ?? AppContext.BaseDirectory, $"{Guid.NewGuid():N}.tmp");
+            try
+            {
+                using (var output = File.Create(tempPath))
+                {
+                    workbook.Write(output);
+                }
+
+                File.Copy(tempPath, workbookPath, true);
+            }
+            finally
+            {
+                File.Delete(tempPath);
+            }
+        }
+
+        workbook.Close();
+        return replacementCount;
     }
 
     private static string ResolveStandaloneOutputFileName(string sourceFileName, string baseFind, GenericReplaceJob job, int rowNumber)

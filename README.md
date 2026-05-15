@@ -2,6 +2,12 @@
 
 Archivio versionato del tool `CreaCprjMontante`.
 
+Cartella di lavoro ufficiale:
+
+```text
+C:\CONFIGURATORE\CLONCPRJ
+```
+
 ## Versioni principali
 
 - `V3`: versione CSV generico.
@@ -15,6 +21,19 @@ Archivio versionato del tool `CreaCprjMontante`.
 - `_versione_v4`: branch dedicato alla V4.
 
 Le regole complete sono in `VERSIONING_RULES.md`.
+
+## Struttura versioni
+
+Ogni versione attiva deve restare pulita:
+
+```text
+V4/
+  portable/
+  source/
+  CreaCprj_v4.zip
+```
+
+Niente file sciolti nella root della versione oltre allo ZIP; niente `bin/`, `obj/`, `.pdb` o file `- Copy` nei pacchetti finali.
 
 ## Script utili
 
