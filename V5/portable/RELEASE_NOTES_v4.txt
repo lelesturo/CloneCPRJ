@@ -1,0 +1,16 @@
+CreaCprjMontante UI v4.0.2
+
+- La tab Sostituzioni Generiche puo' modificare template Excel .xls, .xlsx e .xlsm sostituendo testi nelle celle.
+
+CreaCprjMontante UI v4.0.1
+
+- Aggiornamento IP server anche nei file .cid, incluso il parametro <P type="IP">...</P>.
+
+CreaCprjMontante UI v4.0
+
+- Aggiunta lettura file Excel: .xlsx, .xlsm, .xls.
+- Le modalita' "Progetti DIGIS da file" e "File generico" accettano sia CSV sia Excel.
+- Il formato CSV precedente resta compatibile.
+- Per Excel viene letto il primo foglio non vuoto, scegliendo quello con piu' righe quando il workbook contiene piu' fogli.
+- Aggiornata la UI: filtri file Excel/CSV e testi "file" al posto di solo "CSV".
+- Aggiornata la CLI: --csv accetta anche Excel.
