@@ -7,10 +7,10 @@
     <Nullable>enable</Nullable>
     <AssemblyName>CreaCprjMontante</AssemblyName>
     <RootNamespace>CreaCprjMontante</RootNamespace>
-    <Version>4.0.2</Version>
-    <AssemblyVersion>4.0.2.0</AssemblyVersion>
-    <FileVersion>4.0.2.0</FileVersion>
-    <InformationalVersion>4.0.2-excel-template</InformationalVersion>
+    <Version>5.0.0</Version>
+    <AssemblyVersion>5.0.0.0</AssemblyVersion>
+    <FileVersion>5.0.0.0</FileVersion>
+    <InformationalVersion>5.0.0-module-impact</InformationalVersion>
   </PropertyGroup>
   <ItemGroup>
     <Compile Remove="**\*- Copy.cs" />

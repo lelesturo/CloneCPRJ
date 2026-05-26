@@ -1,0 +1,6 @@
+Release v5.0.0
+
+- Aggiunta tab "Analisi Modulo".
+- Analisi read-only di un modulo dentro .cprj/.zip: definizioni .dbx/.ccx, riferimenti rtu.ccx, tag e file impattati.
+- Opzione per includere la famiglia tag/prefisso, utile per vedere impatti collegati come PTOV_1M14_AS1.
+- Base funzionale mantenuta da v4.0.2.

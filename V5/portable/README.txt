@@ -1,13 +1,12 @@
 CREA CPRJ MONTANTE
 
+Versione 5.0.0
+- Nuova tab "Analisi Modulo": cerca un modulo nel .cprj senza modificare il progetto.
+- Mostra definizioni .dbx/.ccx, riferimenti in rtu.ccx, include in ddbb.dbx, tag diretti e file impattati.
+- L'opzione famiglia tag/prefisso include anche impatti per prefissi tipo PTOV_1M14_AS1.
+
 Versione 4.0.2
 - La tab "Sostituzioni Generiche" puo' modificare template Excel .xls, .xlsx e .xlsm sostituendo testi nelle celle.
-
-Versione 4.0.0
-- Le tab "Progetti DIGIS da file" e "File generico" leggono CSV, XLSX, XLSM e XLS.
-- La CLI continua a usare l'opzione --csv, ma ora accetta anche file Excel.
-- Il formato CSV precedente resta compatibile.
-- Nei file Excel viene letto il primo foglio utile; se ci sono piu' fogli non vuoti, viene usato quello con piu' righe.
 
 Versione 3.0.0
 - Nuova tab "CSV generico": legge CSV con intestazione e genera un file per ogni riga.
@@ -46,7 +45,7 @@ Versione 2.0.0
 - Nome file output (opz.): se vuoto usa il nuovo montante.
 - Trova extra / Sostituisci con (opz.): es. PTOV -> TNOT.
 
-3) Tab "Progetti DIGIS da file"
+3) Tab "Progetti DIGIS da CSV"
 - Montante template (Find): es. 3M11.
 - CSV: Montante;Dispositivo;IP;Label opzionale
 - Il tool rileva il tipo progetto dal template (OP/AS1/EV) e aggiorna:
@@ -77,3 +76,8 @@ Montante;Dispositivo;IP;Label
 Esempio CSV generico:
 3M12;67890;gatto
 3M13;99999;cane
+
+5) Tab "Analisi Modulo"
+- Nome modulo: es. 1M14_AS1_PING.
+- "Analizza Modulo" legge il .cprj come archivio e scrive nel log dove il modulo viene definito e richiamato.
+- Con "Includi famiglia tag/prefisso" attivo, oltre al nome esatto cerca anche il prefisso ricavato dai tag del modulo.

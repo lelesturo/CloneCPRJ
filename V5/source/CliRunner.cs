@@ -19,6 +19,37 @@ internal static class CliRunner
                 throw new InvalidOperationException("Manca il percorso sorgente. Usa --source oppure --root.");
             }
 
+            if (!string.IsNullOrWhiteSpace(options.InspectModule))
+            {
+                var inspection = CprjGenerator.InspectModuleImpact(
+                    options.SourcePath,
+                    options.InspectModule,
+                    options.IncludeModuleFamily);
+
+                Console.WriteLine($"Modulo: {inspection.ModuleName}");
+                Console.WriteLine($"Definizioni: {inspection.Definitions.Count}");
+                foreach (var definition in inspection.Definitions)
+                {
+                    Console.WriteLine($"  DEF {definition.FileName} [{definition.Kind}] label={definition.Label ?? "-"} tipo={definition.DeviceType ?? "-"} ip={definition.Ip ?? "-"} tag={definition.Tags.Count}");
+                }
+
+                Console.WriteLine($"RTU: {inspection.RtuReferences.Count}");
+                foreach (var reference in inspection.RtuReferences)
+                {
+                    Console.WriteLine($"  RTU {reference.NodeType} id={reference.Id ?? "-"} href={reference.Href ?? "-"} label={reference.Label ?? "-"} errorTag={reference.ErrorTag ?? "-"}");
+                }
+
+                Console.WriteLine($"Tag: {string.Join(", ", inspection.Tags)}");
+                Console.WriteLine($"File impattati: {inspection.TextImpacts.Count}");
+                foreach (var impact in inspection.TextImpacts)
+                {
+                    var terms = string.Join(", ", impact.Terms.Take(5).Select(term => $"{term.Term}={term.Occurrences}"));
+                    Console.WriteLine($"  HIT {impact.FileName}: {impact.TotalOccurrences} ({terms})");
+                }
+
+                return 0;
+            }
+
             if (!string.IsNullOrWhiteSpace(options.CsvPath))
             {
                 var createdFiles = CprjGenerator.BuildBatch(
@@ -106,6 +137,8 @@ internal static class CliRunner
         Console.WriteLine("  --target-code   Quadriletterale output, es. TNOT");
         Console.WriteLine("  --find          Testo extra da cercare");
         Console.WriteLine("  --replace       Testo extra sostitutivo");
+        Console.WriteLine("  --inspect-module Nome modulo da analizzare senza modifiche");
+        Console.WriteLine("  --module-exact  Non include la famiglia tag/prefisso nell'analisi modulo");
         Console.WriteLine();
         Console.WriteLine("File tabellare con header consigliato:");
         Console.WriteLine("  TargetName;TargetIp;TemplateCode;TargetCode;ExtraFind;ExtraReplace;OutputName");
@@ -136,6 +169,8 @@ internal static class CliRunner
         public string? TargetCode { get; private init; }
         public string? ExtraFind { get; private init; }
         public string? ExtraReplace { get; private init; }
+        public string? InspectModule { get; private init; }
+        public bool IncludeModuleFamily { get; private init; } = true;
         public bool ShowHelp { get; private init; }
 
         public static Options Parse(string[] args)
@@ -151,6 +186,8 @@ internal static class CliRunner
             string? targetCode = null;
             string? extraFind = null;
             string? extraReplace = null;
+            string? inspectModule = null;
+            var includeModuleFamily = true;
             var showHelp = false;
 
             for (var i = 0; i < args.Length; i++)
@@ -211,6 +248,14 @@ internal static class CliRunner
                         extraReplace = ReadArgumentValue(args, ref i, arg);
                         break;
 
+                    case "--inspect-module":
+                        inspectModule = ReadArgumentValue(args, ref i, arg);
+                        break;
+
+                    case "--module-exact":
+                        includeModuleFamily = false;
+                        break;
+
                     case "--help":
                     case "-h":
                         showHelp = true;
@@ -234,6 +279,8 @@ internal static class CliRunner
                 TargetCode = targetCode,
                 ExtraFind = extraFind,
                 ExtraReplace = extraReplace,
+                InspectModule = inspectModule,
+                IncludeModuleFamily = includeModuleFamily,
                 ShowHelp = showHelp
             };
         }

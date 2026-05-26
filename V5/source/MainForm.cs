@@ -12,6 +12,8 @@ internal sealed class MainForm : Form
     private readonly TextBox _deviceQuadFindTextBox = new() { Dock = DockStyle.Fill, Text = "PTOV" };
     private readonly TextBox _deviceQuadReplaceTextBox = new() { Dock = DockStyle.Fill, Text = "TNOT" };
     private readonly TextBox _genericCsvTextBox = new() { Dock = DockStyle.Fill };
+    private readonly TextBox _moduleNameTextBox = new() { Dock = DockStyle.Fill, Text = "1M14_AS1_PING" };
+    private readonly CheckBox _moduleFamilyCheckBox = new() { AutoSize = true, Checked = true, Text = "Includi famiglia tag/prefisso" };
     private readonly Label _genericHintLabel = new()
     {
         Dock = DockStyle.Fill,
@@ -71,14 +73,16 @@ internal sealed class MainForm : Form
     private readonly Button _addGenericCsvMappingButton = new() { Text = "Aggiungi Mapping", AutoSize = true };
     private readonly Button _removeGenericCsvMappingButton = new() { Text = "Rimuovi Mapping", AutoSize = true };
     private readonly Button _generateGenericCsvButton = new() { Text = "Genera File Generico", AutoSize = true };
+    private readonly Button _inspectModuleButton = new() { Text = "Analizza Modulo", AutoSize = true };
     private readonly Label _statusLabel = new() { Dock = DockStyle.Fill, AutoSize = true, Text = "Pronto", Padding = new Padding(0, 6, 0, 0) };
     private readonly Label _templateInfoLabel = new() { Dock = DockStyle.Fill, AutoSize = true, Text = "Tipo template: non analizzato" };
     private readonly Label _csvInfoLabel = new() { Dock = DockStyle.Fill, AutoSize = true, Text = "File dispositivi: non analizzato" };
     private readonly Label _genericCsvInfoLabel = new() { Dock = DockStyle.Fill, AutoSize = true, Text = "File generico: non analizzato" };
+    private readonly Label _moduleInfoLabel = new() { Dock = DockStyle.Fill, AutoSize = true, Text = "Modulo: non analizzato" };
 
     public MainForm()
     {
-        Text = "Crea CPRJ Montante v4.0";
+        Text = "Crea CPRJ Montante v5.0";
         StartPosition = FormStartPosition.CenterScreen;
         MinimumSize = new Size(1100, 820);
         Size = new Size(1180, 880);
@@ -95,7 +99,7 @@ internal sealed class MainForm : Form
 
         AppendLog("Output predefinito: " + CprjGenerator.DefaultOutputDirectory);
         AppendLog("Se selezioni una cartella con un solo .cprj, il tool la usa automaticamente come template.");
-        AppendLog("V4: input CSV/XLSX/XLS anche per dispositivi e mapping generico.");
+        AppendLog("V5: aggiunta analisi impatto modulo.");
     }
 
     private void ConfigureGenericGrid()
@@ -186,14 +190,17 @@ internal sealed class MainForm : Form
         var genericTab = new TabPage("Sostituzioni Generiche");
         var deviceTab = new TabPage("Progetti DIGIS da file");
         var genericCsvTab = new TabPage("File generico");
+        var moduleTab = new TabPage("Analisi Modulo");
 
         genericTab.Controls.Add(BuildGenericTab());
         deviceTab.Controls.Add(BuildDeviceTab());
         genericCsvTab.Controls.Add(BuildGenericCsvTab());
+        moduleTab.Controls.Add(BuildModuleAnalysisTab());
 
         tabs.TabPages.Add(genericTab);
         tabs.TabPages.Add(deviceTab);
         tabs.TabPages.Add(genericCsvTab);
+        tabs.TabPages.Add(moduleTab);
         return tabs;
     }
 
@@ -357,6 +364,44 @@ internal sealed class MainForm : Form
         return root;
     }
 
+    private Control BuildModuleAnalysisTab()
+    {
+        var root = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 4,
+            Padding = new Padding(12)
+        };
+        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        root.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+
+        var line1 = new TableLayoutPanel { Dock = DockStyle.Top, ColumnCount = 4, AutoSize = true };
+        line1.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 190F));
+        line1.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+        line1.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        line1.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        line1.Controls.Add(CreateLabel("Modulo da cercare"), 0, 0);
+        line1.Controls.Add(_moduleNameTextBox, 1, 0);
+        line1.Controls.Add(_moduleFamilyCheckBox, 2, 0);
+        line1.Controls.Add(_inspectModuleButton, 3, 0);
+
+        var info = new Label
+        {
+            Dock = DockStyle.Fill,
+            AutoSize = true,
+            ForeColor = Color.DimGray,
+            Text = "Analisi read-only: trova DBX, CCX tecnico, nodo rtu.ccx, include ddbb.dbx, tag e occorrenze nei file testuali del .cprj."
+        };
+
+        root.Controls.Add(line1, 0, 0);
+        root.Controls.Add(_moduleInfoLabel, 0, 1);
+        root.Controls.Add(info, 0, 2);
+        return root;
+    }
+
     private Control BuildLogGroup()
     {
         var group = new GroupBox { Dock = DockStyle.Fill, Text = "Log", Padding = new Padding(12) };
@@ -389,6 +434,7 @@ internal sealed class MainForm : Form
         _addGenericCsvMappingButton.Click += (_, _) => AddGenericCsvMappingRow();
         _removeGenericCsvMappingButton.Click += (_, _) => RemoveGenericCsvMappingRow();
         _generateGenericCsvButton.Click += async (_, _) => await GenerateGenericCsvAsync();
+        _inspectModuleButton.Click += async (_, _) => await InspectModuleAsync();
         _genericCsvMappingGrid.CurrentCellDirtyStateChanged += (_, _) =>
         {
             if (_genericCsvMappingGrid.IsCurrentCellDirty)
@@ -713,6 +759,95 @@ internal sealed class MainForm : Form
         }
     }
 
+    private async Task InspectModuleAsync()
+    {
+        try
+        {
+            ValidateSourceAndOutput();
+            if (string.IsNullOrWhiteSpace(_moduleNameTextBox.Text))
+            {
+                throw new InvalidOperationException("Inserisci il nome modulo da analizzare.");
+            }
+
+            SetBusy(true, "Analisi modulo in corso...");
+            AppendLog("Avvio analisi modulo: " + _moduleNameTextBox.Text.Trim());
+
+            var inspection = await Task.Run(() =>
+                CprjGenerator.InspectModuleImpact(
+                    _sourceTextBox.Text,
+                    _moduleNameTextBox.Text,
+                    _moduleFamilyCheckBox.Checked));
+
+            _moduleInfoLabel.Text =
+                $"Modulo: {inspection.ModuleName} | Definizioni: {inspection.Definitions.Count} | RTU: {inspection.RtuReferences.Count} | Tag: {inspection.Tags.Count} | File impattati: {inspection.TextImpacts.Count}";
+            AppendLog(_moduleInfoLabel.Text);
+
+            AppendLog("Termini cercati: " + string.Join(", ", inspection.SearchTerms));
+
+            if (inspection.Definitions.Count == 0)
+            {
+                AppendLog("Definizioni: nessuna definizione .dbx/.ccx trovata con il nome modulo.");
+            }
+            else
+            {
+                AppendLog("Definizioni trovate:");
+                foreach (var definition in inspection.Definitions)
+                {
+                    var details = new[]
+                    {
+                        string.IsNullOrWhiteSpace(definition.Label) ? null : $"label={definition.Label}",
+                        string.IsNullOrWhiteSpace(definition.DeviceType) ? null : $"tipo={definition.DeviceType}",
+                        string.IsNullOrWhiteSpace(definition.Ip) ? null : $"IP={definition.Ip}",
+                        definition.Tags.Count == 0 ? null : $"tag={definition.Tags.Count}"
+                    }.Where(value => value is not null);
+                    AppendLog($"  {definition.FileName} [{definition.Kind}] {string.Join(" | ", details)}");
+                }
+            }
+
+            if (inspection.RtuReferences.Count == 0)
+            {
+                AppendLog("rtu.ccx: nessun nodo collegato trovato.");
+            }
+            else
+            {
+                AppendLog("Riferimenti rtu.ccx:");
+                foreach (var reference in inspection.RtuReferences)
+                {
+                    AppendLog($"  {reference.NodeType} id={reference.Id ?? "-"} href={reference.Href ?? "-"} label={reference.Label ?? "-"} errorTag={reference.ErrorTag ?? "-"} disable={reference.Disabled ?? "-"}");
+                }
+            }
+
+            if (inspection.Tags.Count > 0)
+            {
+                AppendLog("Tag diretti: " + string.Join(", ", inspection.Tags));
+            }
+
+            AppendLog("File impattati:");
+            foreach (var impact in inspection.TextImpacts)
+            {
+                var termSummary = string.Join(", ", impact.Terms.Take(5).Select(term => $"{term.Term}={term.Occurrences}"));
+                if (impact.Terms.Count > 5)
+                {
+                    termSummary += $", +{impact.Terms.Count - 5} altri";
+                }
+
+                AppendLog($"  {impact.FileName}: {impact.TotalOccurrences} occorrenze ({termSummary})");
+            }
+
+            SetStatus("Modulo analizzato");
+        }
+        catch (Exception ex)
+        {
+            AppendLog("ERRORE: " + ex.Message);
+            SetStatus("Errore");
+            MessageBox.Show(this, ex.Message, "Errore", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+        finally
+        {
+            SetBusy(false, "Pronto");
+        }
+    }
+
     private IReadOnlyList<GenericReplaceJob> ReadGenericJobs()
     {
         var jobs = new List<GenericReplaceJob>();
@@ -880,6 +1015,8 @@ internal sealed class MainForm : Form
         _addGenericCsvMappingButton.Enabled = !busy;
         _removeGenericCsvMappingButton.Enabled = !busy;
         _generateGenericCsvButton.Enabled = !busy;
+        _inspectModuleButton.Enabled = !busy;
+        _moduleFamilyCheckBox.Enabled = !busy;
         SetStatus(statusText);
     }
 

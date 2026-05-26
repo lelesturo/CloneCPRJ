@@ -49,6 +49,38 @@ internal sealed record DeviceCsvInspection(
     IReadOnlyList<string> DeviceTypes,
     IReadOnlyList<DeviceCsvProjectInspection> Projects);
 
+internal sealed record ModuleImpactInspection(
+    string SourcePath,
+    string ModuleName,
+    IReadOnlyList<string> SearchTerms,
+    IReadOnlyList<ModuleDefinition> Definitions,
+    IReadOnlyList<ModuleRtuReference> RtuReferences,
+    IReadOnlyList<string> Tags,
+    IReadOnlyList<ModuleTextImpact> TextImpacts);
+
+internal sealed record ModuleDefinition(
+    string FileName,
+    string Kind,
+    string? Label,
+    string? DeviceType,
+    string? Ip,
+    IReadOnlyList<string> Tags);
+
+internal sealed record ModuleRtuReference(
+    string NodeType,
+    string? Id,
+    string? Href,
+    string? Label,
+    string? ErrorTag,
+    string? Disabled);
+
+internal sealed record ModuleTextImpact(
+    string FileName,
+    int TotalOccurrences,
+    IReadOnlyList<ModuleTermImpact> Terms);
+
+internal sealed record ModuleTermImpact(string Term, int Occurrences);
+
 internal static class CprjGenerator
 {
     private static readonly Encoding StrictUtf8Encoding = new UTF8Encoding(true, true);
@@ -212,6 +244,74 @@ internal static class CprjGenerator
             projects.Sum(project => project.DeviceIps.Count),
             deviceTypes,
             inspectedProjects);
+    }
+
+    public static ModuleImpactInspection InspectModuleImpact(string sourcePath, string moduleName, bool includeTagFamily)
+    {
+        if (string.IsNullOrWhiteSpace(moduleName))
+        {
+            throw new InvalidOperationException("Inserisci il nome modulo da analizzare.");
+        }
+
+        var normalizedSourcePath = ResolveSourcePath(sourcePath);
+        var normalizedModuleName = moduleName.Trim();
+
+        using var templateContext = PrepareTemplateContext(normalizedSourcePath);
+        var templateFiles = GetTemplateItems(templateContext.TemplateRootPath)
+            .Where(item => !item.IsDirectory)
+            .ToList();
+        EnsureTemplateFiles(templateFiles, templateContext.TemplateRootPath);
+
+        var textFiles = LoadTextTemplateFiles(templateFiles);
+        var exactTerms = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { normalizedModuleName };
+        var definitions = FindModuleDefinitions(textFiles, normalizedModuleName, exactTerms);
+        var rtuReferences = FindModuleRtuReferences(textFiles, normalizedModuleName, definitions, exactTerms);
+
+        foreach (var href in rtuReferences.Select(reference => reference.Href).Where(value => !string.IsNullOrWhiteSpace(value)))
+        {
+            exactTerms.Add(href!);
+        }
+
+        var tags = definitions
+            .SelectMany(definition => definition.Tags)
+            .Concat(rtuReferences.Select(reference => reference.ErrorTag).Where(value => !string.IsNullOrWhiteSpace(value)).Cast<string>())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(value => value, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        foreach (var tag in tags)
+        {
+            exactTerms.Add(tag);
+        }
+
+        var searchTerms = exactTerms.ToList();
+        if (includeTagFamily)
+        {
+            searchTerms.AddRange(BuildFamilySearchTerms(normalizedModuleName, tags));
+        }
+
+        searchTerms = searchTerms
+            .Where(term => !string.IsNullOrWhiteSpace(term))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderByDescending(term => term.Length)
+            .ThenBy(term => term, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var impacts = textFiles
+            .Select(file => CountModuleImpact(file.RelativePath, file.Content, searchTerms))
+            .Where(impact => impact.TotalOccurrences > 0)
+            .OrderBy(impact => ImpactPriority(impact.FileName))
+            .ThenBy(impact => impact.FileName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        return new ModuleImpactInspection(
+            normalizedSourcePath,
+            normalizedModuleName,
+            searchTerms,
+            definitions,
+            rtuReferences,
+            tags,
+            impacts);
     }
 
     public static IReadOnlyList<string> BuildDeviceProjectsFromCsv(
@@ -873,6 +973,285 @@ internal static class CprjGenerator
 
         return new TemplateInspection(templateName.Trim(), templateDeviceType, serverIp.Trim(), clients);
     }
+
+    private static IReadOnlyList<TextTemplateFile> LoadTextTemplateFiles(IReadOnlyList<TemplateItem> templateFiles)
+    {
+        var files = new List<TextTemplateFile>();
+        foreach (var item in templateFiles)
+        {
+            var bytes = File.ReadAllBytes(item.FullPath);
+            if (!TryDecodeText(bytes, out var content, out _))
+            {
+                continue;
+            }
+
+            files.Add(new TextTemplateFile(item.FullPath, item.RelativePath.Replace('\\', '/'), content));
+        }
+
+        return files;
+    }
+
+    private static IReadOnlyList<ModuleDefinition> FindModuleDefinitions(
+        IReadOnlyList<TextTemplateFile> textFiles,
+        string moduleName,
+        ISet<string> exactTerms)
+    {
+        var definitions = new List<ModuleDefinition>();
+        foreach (var file in textFiles.Where(file => ContainsOrdinalIgnoreCase(file.Content, moduleName)))
+        {
+            var extension = Path.GetExtension(file.RelativePath);
+            if (!extension.Equals(".dbx", StringComparison.OrdinalIgnoreCase) &&
+                !extension.Equals(".ccx", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (!TryParseXml(file.Content, out var document))
+            {
+                if (!Path.GetFileNameWithoutExtension(file.RelativePath).Equals(moduleName, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                definitions.Add(new ModuleDefinition(
+                    file.RelativePath,
+                    extension.TrimStart('.').ToUpperInvariant(),
+                    null,
+                    null,
+                    null,
+                    ExtractTagsWithRegex(file.Content)));
+                continue;
+            }
+
+            var label = ReadElementValue(document, "general", "label")
+                ?? ReadElementValue(document, "CCX_device", "name")
+                ?? document.Descendants()
+                    .FirstOrDefault(node =>
+                        node.Name.LocalName.Equals("IED", StringComparison.OrdinalIgnoreCase) &&
+                        string.Equals(node.Attribute("name")?.Value, moduleName, StringComparison.OrdinalIgnoreCase))
+                    ?.Attribute("name")
+                    ?.Value;
+
+            var fileNameMatches = Path.GetFileNameWithoutExtension(file.RelativePath).Equals(moduleName, StringComparison.OrdinalIgnoreCase);
+            var labelMatches = string.Equals(label, moduleName, StringComparison.OrdinalIgnoreCase);
+            if (!fileNameMatches && !labelMatches)
+            {
+                continue;
+            }
+
+            var deviceType = ReadElementValue(document, "CCX_device", "type")
+                ?? document.Descendants()
+                    .FirstOrDefault(node => node.Name.LocalName.Equals("IED", StringComparison.OrdinalIgnoreCase))
+                    ?.Attribute("protocol")
+                    ?.Value;
+
+            var ip = ReadElementValue(document, "comms", "IP")
+                ?? document.Descendants()
+                    .FirstOrDefault(node =>
+                        node.Name.LocalName.Equals("IP_addr", StringComparison.OrdinalIgnoreCase) ||
+                        node.Name.LocalName.Equals("IP", StringComparison.OrdinalIgnoreCase))
+                    ?.Value
+                    ?.Trim();
+
+            var tags = ExtractXmlTags(document);
+            foreach (var tag in tags)
+            {
+                exactTerms.Add(tag);
+            }
+
+            definitions.Add(new ModuleDefinition(
+                file.RelativePath,
+                extension.TrimStart('.').ToUpperInvariant(),
+                label,
+                deviceType,
+                ip,
+                tags));
+        }
+
+        return definitions
+            .OrderBy(definition => definition.FileName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static IReadOnlyList<ModuleRtuReference> FindModuleRtuReferences(
+        IReadOnlyList<TextTemplateFile> textFiles,
+        string moduleName,
+        IReadOnlyList<ModuleDefinition> definitions,
+        ISet<string> exactTerms)
+    {
+        var rtuFile = textFiles.FirstOrDefault(file => Path.GetFileName(file.RelativePath).Equals("rtu.ccx", StringComparison.OrdinalIgnoreCase));
+        if (rtuFile is null || !TryParseXml(rtuFile.Content, out var document))
+        {
+            return [];
+        }
+
+        var definitionFiles = definitions
+            .Select(definition => definition.FileName)
+            .Select(Path.GetFileName)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var references = new List<ModuleRtuReference>();
+        foreach (var node in document.Descendants())
+        {
+            var href = node.Attribute("href")?.Value;
+            var label = node.Attribute("ccx_label")?.Value;
+            var errorTag = node.Attribute("errorTag")?.Value;
+            var isMatch =
+                string.Equals(label, moduleName, StringComparison.OrdinalIgnoreCase) ||
+                (!string.IsNullOrWhiteSpace(href) && definitionFiles.Contains(Path.GetFileName(href)));
+
+            if (!isMatch)
+            {
+                continue;
+            }
+
+            if (!string.IsNullOrWhiteSpace(href))
+            {
+                exactTerms.Add(href);
+            }
+
+            if (!string.IsNullOrWhiteSpace(errorTag))
+            {
+                exactTerms.Add(errorTag);
+            }
+
+            references.Add(new ModuleRtuReference(
+                node.Name.LocalName,
+                node.Attribute("id")?.Value,
+                href,
+                label,
+                errorTag,
+                node.Attribute("disable")?.Value));
+        }
+
+        return references;
+    }
+
+    private static IReadOnlyList<string> ExtractXmlTags(XDocument document)
+    {
+        return document
+            .Descendants()
+            .Select(node => node.Attribute("tag")?.Value)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Cast<string>()
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(value => value, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static IReadOnlyList<string> ExtractTagsWithRegex(string content)
+    {
+        return Regex.Matches(content, "\\btag\\s*=\\s*\"(?<tag>[^\"]+)\"", RegexOptions.IgnoreCase)
+            .Select(match => match.Groups["tag"].Value)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(value => value, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static IReadOnlyList<string> BuildFamilySearchTerms(string moduleName, IReadOnlyList<string> tags)
+    {
+        var terms = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var tagFamily = LongestTokenPrefix(tags);
+        if (!string.IsNullOrWhiteSpace(tagFamily))
+        {
+            terms.Add(tagFamily);
+        }
+        else
+        {
+            var moduleFamily = RemoveLastToken(moduleName);
+            if (!string.IsNullOrWhiteSpace(moduleFamily))
+            {
+                terms.Add(moduleFamily);
+            }
+        }
+
+        return terms.ToList();
+    }
+
+    private static string? RemoveLastToken(string value)
+    {
+        var index = value.LastIndexOf('_');
+        return index > 0 ? value[..index] : null;
+    }
+
+    private static string? LongestTokenPrefix(IReadOnlyList<string> values)
+    {
+        if (values.Count == 0)
+        {
+            return null;
+        }
+
+        var tokenized = values
+            .Select(value => value.Split('_', StringSplitOptions.RemoveEmptyEntries))
+            .Where(tokens => tokens.Length > 1)
+            .ToList();
+        if (tokenized.Count == 0)
+        {
+            return null;
+        }
+
+        var prefix = new List<string>();
+        for (var i = 0; i < tokenized.Min(tokens => tokens.Length) - 1; i++)
+        {
+            var candidate = tokenized[0][i];
+            if (tokenized.All(tokens => string.Equals(tokens[i], candidate, StringComparison.OrdinalIgnoreCase)))
+            {
+                prefix.Add(candidate);
+                continue;
+            }
+
+            break;
+        }
+
+        return prefix.Count == 0 ? null : string.Join("_", prefix);
+    }
+
+    private static ModuleTextImpact CountModuleImpact(string fileName, string content, IReadOnlyList<string> searchTerms)
+    {
+        var terms = searchTerms
+            .Select(term => new ModuleTermImpact(term, CountOccurrences(content, term)))
+            .Where(term => term.Occurrences > 0)
+            .ToList();
+
+        return new ModuleTextImpact(fileName, terms.Sum(term => term.Occurrences), terms);
+    }
+
+    private static int ImpactPriority(string fileName)
+    {
+        var name = Path.GetFileName(fileName);
+        if (name.Equals("rtu.ccx", StringComparison.OrdinalIgnoreCase))
+        {
+            return 0;
+        }
+
+        if (name.Equals("ddbb.dbx", StringComparison.OrdinalIgnoreCase))
+        {
+            return 1;
+        }
+
+        var extension = Path.GetExtension(name);
+        return extension.Equals(".ccx", StringComparison.OrdinalIgnoreCase) ? 2 :
+            extension.Equals(".dbx", StringComparison.OrdinalIgnoreCase) ? 3 : 4;
+    }
+
+    private static bool TryParseXml(string content, out XDocument document)
+    {
+        try
+        {
+            document = XDocument.Parse(content, LoadOptions.PreserveWhitespace);
+            return true;
+        }
+        catch
+        {
+            document = new XDocument();
+            return false;
+        }
+    }
+
+    private static bool ContainsOrdinalIgnoreCase(string content, string value) =>
+        content.IndexOf(value, StringComparison.OrdinalIgnoreCase) >= 0;
 
     private static IReadOnlyList<DeviceProject> LoadDeviceProjects(string csvPath)
     {
@@ -1838,6 +2217,8 @@ internal static class CprjGenerator
         private static string NormalizeRelativePath(string relativePath) =>
             relativePath.Replace('\\', Path.DirectorySeparatorChar).Replace('/', Path.DirectorySeparatorChar);
     }
+
+    private sealed record TextTemplateFile(string FullPath, string RelativePath, string Content);
 
     private sealed record DeviceCsvEntry(string Montante, string DeviceType, string Ip, string? Label);
 
