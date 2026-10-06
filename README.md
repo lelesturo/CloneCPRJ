@@ -48,3 +48,10 @@ Compilare nella suite THYTOOLS con `tools/build_winforms_ui.ps1 -Tool CLONCPRJ`;
 header e logo sono collegati dal repository della suite. Motore/CLI ereditati
 dal checkout locale V5.3, senza cambi funzionali nel ciclo UI.
 Branch dedicato: `_versione_v6`.
+# Crea CPRJ V7 — UI comune
+
+La release V7 conserva motore e CLI della V6 e allinea log grafite/giallo,
+scrollbar, pannello log ridimensionabile e menu di selezione delle griglie.
+La selezione delle celle non cambia l'inclusione dei dati nel motore.
+Portable e archivio sono in `V7`; branch dedicato `_versione_v7`.
+Il tema/logo restano collegati alla suite THYTOOLS.

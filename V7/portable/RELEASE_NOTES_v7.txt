@@ -1,0 +1,4 @@
+V7 - 2026-10-06
+Allineamento log nero/giallo, scrollbar su entrambi gli assi, pannelli ridimensionabili.
+Seleziona tutto/Deseleziona tutto nel menu contestuale delle griglie: selezione celle, non inclusione dei dati.
+Motore e CLI invariati rispetto a V6; problemi di stato/worker dell audit rimangono un intervento distinto.

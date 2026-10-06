@@ -47,6 +47,7 @@ V3 -> _versione_v3
 V4 -> _versione_v4
 V5 -> _versione_v5
 V6 -> _versione_v6
+V7 -> _versione_v7
 ```
 
 Il branch `main` contiene l'archivio ordinato e la documentazione comune.
