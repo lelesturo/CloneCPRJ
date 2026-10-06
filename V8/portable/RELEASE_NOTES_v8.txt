@@ -1,0 +1,2 @@
+V8 - 2026-10-06
+Comandi di scelta e navigazione grigi prima delle azioni gialle. Analisi, generazione, inserimento e modifica gialli. Motore e CLI invariati rispetto a V7.

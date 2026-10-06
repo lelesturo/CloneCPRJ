@@ -1,3 +1,7 @@
+# Crea CPRJ V8
+
+Nuova regola comandi: selezione grigia prima delle operazioni gialle. Versioni precedenti conservate. Motore e CLI invariati rispetto a V7.
+
 # CLONCPRJ
 
 Archivio versionato del tool `CreaCprjMontante`.

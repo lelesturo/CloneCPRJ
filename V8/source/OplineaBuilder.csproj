@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>CreaCprjMontante</AssemblyName>
+    <RootNamespace>CreaCprjMontante</RootNamespace>
+    <Version>8.0.0</Version>
+    <AssemblyVersion>8.0.0.0</AssemblyVersion>
+    <FileVersion>8.0.0.0</FileVersion>
+    <InformationalVersion>8.0.0</InformationalVersion>
+  </PropertyGroup>
+  <PropertyGroup>
+    <ThytoolsUiRoot Condition="'$(ThytoolsUiRoot)' == ''">$(MSBuildProjectDirectory)\..\..\..\thytools_ui</ThytoolsUiRoot>
+    <ThytoolsAssetsRoot Condition="'$(ThytoolsAssetsRoot)' == ''">$(MSBuildProjectDirectory)\..\..\..\..\assets</ThytoolsAssetsRoot>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="$(ThytoolsUiRoot)\winforms\SuiteTheme.cs" Link="SuiteTheme.cs" />
+    <EmbeddedResource Include="$(ThytoolsAssetsRoot)\logo_thytronic_white_header.png" LogicalName="Thytools.Logo" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Remove="**\*- Copy.cs" />
+    <PackageReference Include="ExcelDataReader" Version="3.7.0" />
+    <PackageReference Include="NPOI" Version="2.8.0" />
+    <PackageReference Include="System.Text.Encoding.CodePages" Version="10.0.0" />
+  </ItemGroup>
+  <Target Name="RemovePortableDebugSymbols" AfterTargets="Publish">
+    <Delete Files="$(PublishDir)libSkiaSharp.pdb" />
+  </Target>
+</Project>

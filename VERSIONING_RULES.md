@@ -87,3 +87,5 @@ git push origin main
 ```powershell
 git status --short --branch
 ```
+
+V8: branch `_versione_v8`, operazioni gialle e selezioni grigie secondo UI_STANDARD della suite.
