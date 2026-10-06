@@ -1,0 +1,5 @@
+2026-10-06 - V6.0.0
+Header riutilizzabile, titolo/versione, logo proporzionato e antialias.
+Palette, campi, sezioni, tabelle e azioni principali allineati.
+Motore BuildEngine e CLI identici al checkout locale V5.3 di partenza.
+Build e render GUI offline verificati. Nessuna prova su impianto o dispositivi.

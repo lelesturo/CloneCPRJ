@@ -39,3 +39,12 @@ Niente file sciolti nella root della versione oltre allo ZIP; niente `bin/`, `ob
 
 - `New-VersionBranch.ps1`: crea una nuova cartella versione e il branch dedicato.
 - `Push-VersionBranches.ps1`: pubblica `main` e tutti i branch `_versione_*` su `origin`.
+
+## V6 — UI comune THYTOOLS
+
+Header parametrico e logo ad alta qualità; tema WinForms condiviso con Backup IBU V3.
+Sorgenti in `V6/source`, portable in `V6/portable`, distribuzione `V6/CreaCprj_v6.zip`.
+Compilare nella suite THYTOOLS con `tools/build_winforms_ui.ps1 -Tool CLONCPRJ`;
+header e logo sono collegati dal repository della suite. Motore/CLI ereditati
+dal checkout locale V5.3, senza cambi funzionali nel ciclo UI.
+Branch dedicato: `_versione_v6`.

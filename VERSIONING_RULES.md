@@ -46,6 +46,7 @@ Ogni versione deve avere un branch Git dedicato:
 V3 -> _versione_v3
 V4 -> _versione_v4
 V5 -> _versione_v5
+V6 -> _versione_v6
 ```
 
 Il branch `main` contiene l'archivio ordinato e la documentazione comune.

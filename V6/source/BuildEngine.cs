@@ -1,0 +1,3505 @@
+using System.IO.Compression;
+using System.Text.RegularExpressions;
+using System.Text;
+using System.Xml.Linq;
+using ExcelDataReader;
+using NPOI.SS.UserModel;
+
+namespace CreaCprjMontante;
+
+internal sealed record TextReplacement(string Find, string Replace);
+
+internal sealed record GenericReplaceJob(
+    string ReplaceValue,
+    string? OutputName = null,
+    string? ExtraFind = null,
+    string? ExtraReplace = null,
+    IReadOnlyList<TextReplacement>? AdditionalReplacements = null);
+
+internal sealed record GenericCsvMapping(string CsvColumn, string Find, bool UseAsOutputName = false);
+
+internal sealed record GenericCsvInspection(
+    string CsvPath,
+    int RowCount,
+    IReadOnlyList<string> Columns,
+    IReadOnlyList<string> ColumnPreviews,
+    IReadOnlyList<IReadOnlyList<string>> RowPreviews);
+
+internal sealed record TemplateClientLink(string DeviceType, string Href, string CurrentIp);
+
+internal sealed record TemplateInspection(
+    string TemplateName,
+    string TemplateDeviceType,
+    string ServerIp,
+    IReadOnlyList<TemplateClientLink> Clients);
+
+internal sealed record DeviceCsvProjectInspection(
+    string Montante,
+    IReadOnlyList<DeviceCsvDeviceInspection> Devices);
+
+internal sealed record DeviceCsvDeviceInspection(
+    string DeviceType,
+    string Ip,
+    string? Label);
+
+internal sealed record DeviceCsvInspection(
+    string CsvPath,
+    int ProjectCount,
+    int EntryCount,
+    IReadOnlyList<string> DeviceTypes,
+    IReadOnlyList<DeviceCsvProjectInspection> Projects);
+
+internal sealed record ModuleImpactInspection(
+    string SourcePath,
+    string ModuleName,
+    IReadOnlyList<string> SearchTerms,
+    IReadOnlyList<string> DirectSearchTerms,
+    IReadOnlyList<string> TagSearchTerms,
+    IReadOnlyList<ModuleDefinition> Definitions,
+    IReadOnlyList<ModuleRtuReference> RtuReferences,
+    IReadOnlyList<string> Tags,
+    IReadOnlyList<ModuleTextImpact> TextImpacts,
+    IReadOnlyList<ModuleTextImpact> TagImpacts);
+
+internal sealed record ModuleDefinition(
+    string FileName,
+    string Kind,
+    string? Label,
+    string? DeviceType,
+    string? Ip,
+    IReadOnlyList<string> Tags);
+
+internal sealed record ModuleRtuReference(
+    string NodeType,
+    string? Id,
+    string? Href,
+    string? Label,
+    string? ErrorTag,
+    string? Disabled);
+
+internal sealed record ModuleTextImpact(
+    string FileName,
+    int TotalOccurrences,
+    IReadOnlyList<ModuleTermImpact> Terms);
+
+internal sealed record ModuleTermImpact(string Term, int Occurrences);
+
+internal sealed record ModuleCopyResult(
+    string TargetProject,
+    string OutputProject,
+    int CopiedFiles,
+    int RtuNodes,
+    int DatabaseNodes);
+
+internal sealed record PingerBatchResult(
+    string OutputProject,
+    int Modules,
+    int CopiedFiles,
+    int RtuNodes,
+    int DatabaseNodes);
+
+internal static class CprjGenerator
+{
+    private static readonly Encoding StrictUtf8Encoding = new UTF8Encoding(true, true);
+    private static readonly Encoding StrictUnicodeEncoding = new UnicodeEncoding(false, true, true);
+    private static readonly Encoding StrictBigEndianUnicodeEncoding = new UnicodeEncoding(true, true, true);
+
+    private static readonly Dictionary<string, string> DeviceAliases = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["OP"] = "OP",
+        ["BMUY"] = "OP",
+        ["AS"] = "AS1",
+        ["AS1"] = "AS1",
+        ["BMSY"] = "AS1",
+        ["EV"] = "EV",
+        ["BMVY"] = "EV"
+    };
+
+    public static string DefaultOutputDirectory => Path.Combine(AppContext.BaseDirectory, "GENERATI");
+
+    public static string BuildSingle(
+        string sourcePath,
+        string? outputDirectory,
+        string templateName,
+        string templateIp,
+        string? templateCode,
+        string? targetCode,
+        string targetName,
+        string targetIp,
+        string? extraFind,
+        string? extraReplace,
+        Action<string>? log = null)
+    {
+        var additional = new List<TextReplacement> { new(templateIp, targetIp) };
+        if (!string.IsNullOrWhiteSpace(templateCode) && !string.IsNullOrWhiteSpace(targetCode))
+        {
+            additional.Add(new TextReplacement(templateCode.Trim(), targetCode.Trim()));
+        }
+
+        var jobs = new[]
+        {
+            new GenericReplaceJob(targetName, targetName, extraFind, extraReplace, additional)
+        };
+
+        return BuildGenericBatch(sourcePath, outputDirectory, templateName, jobs, log).Single();
+    }
+
+    public static IReadOnlyList<string> BuildBatch(
+        string sourcePath,
+        string? outputDirectory,
+        string csvPath,
+        string templateName,
+        string templateIp,
+        string? templateCode,
+        string? targetCode,
+        Action<string>? log = null)
+    {
+        var requests = LoadLegacyBatchRequests(csvPath, templateName, templateIp, templateCode, targetCode);
+        var jobs = requests
+            .Select(request => new GenericReplaceJob(
+                request.TargetName,
+                request.OutputName,
+                request.ExtraFind,
+                request.ExtraReplace,
+                request.AdditionalReplacements))
+            .ToList();
+
+        return BuildGenericBatch(sourcePath, outputDirectory, templateName, jobs, log);
+    }
+
+    public static IReadOnlyList<string> BuildGenericBatch(
+        string sourcePath,
+        string? outputDirectory,
+        string baseFind,
+        IReadOnlyList<GenericReplaceJob> jobs,
+        Action<string>? log = null)
+    {
+        if (string.IsNullOrWhiteSpace(baseFind))
+        {
+            throw new InvalidOperationException("Inserisci il testo principale da cercare.");
+        }
+
+        var normalizedSourcePath = ResolveSourcePath(sourcePath);
+        var normalizedOutputDirectory = ResolveOutputDirectory(outputDirectory);
+        var normalizedBaseFind = baseFind.Trim();
+        var effectiveJobs = NormalizeGenericJobs(jobs);
+
+        if (IsStandaloneFileSource(normalizedSourcePath))
+        {
+            return BuildStandaloneTextBatch(
+                normalizedSourcePath,
+                normalizedOutputDirectory,
+                normalizedBaseFind,
+                effectiveJobs,
+                log);
+        }
+
+        using var templateContext = PrepareGenericTemplateContext(normalizedSourcePath);
+        var templateFiles = GetTemplateItems(templateContext.TemplateRootPath);
+        EnsureTemplateFiles(templateFiles, templateContext.TemplateRootPath);
+        var isPlainDirectorySource = Directory.Exists(normalizedSourcePath);
+
+        log?.Invoke($"Template: {normalizedSourcePath}");
+        log?.Invoke($"Output: {normalizedOutputDirectory}");
+        log?.Invoke($"Find principale: {normalizedBaseFind}");
+        log?.Invoke($"Righe da generare: {effectiveJobs.Count}");
+
+        var plans = effectiveJobs.Select(job =>
+        {
+            var replacements = new List<TextReplacement> { new(normalizedBaseFind, job.ReplaceValue) };
+            replacements.AddRange(job.AdditionalReplacements ?? []);
+
+            if (!string.IsNullOrWhiteSpace(job.ExtraFind))
+            {
+                replacements.Add(new TextReplacement(job.ExtraFind!, job.ExtraReplace!));
+            }
+
+            return new BuildPlan(
+                job.OutputName ?? job.ReplaceValue,
+                [new TextReplacement(normalizedBaseFind, job.ReplaceValue)],
+                replacements,
+                new Dictionary<string, List<TextReplacement>>(StringComparer.OrdinalIgnoreCase));
+        }).ToList();
+
+        return isPlainDirectorySource
+            ? ExecuteGenericDirectoryPlans(normalizedOutputDirectory, templateFiles, plans, log)
+            : ExecutePlans(normalizedOutputDirectory, templateFiles, plans, log);
+    }
+
+    public static TemplateInspection InspectTemplate(string sourcePath, string templateName)
+    {
+        var normalizedSourcePath = ResolveSourcePath(sourcePath);
+        using var templateContext = PrepareTemplateContext(normalizedSourcePath);
+        return InspectTemplateRoot(templateContext.TemplateRootPath, templateName);
+    }
+
+    public static DeviceCsvInspection InspectDeviceCsv(string sourcePath, string csvPath, Action<string>? log = null)
+    {
+        var normalizedSourcePath = ResolveSourcePath(sourcePath);
+        var normalizedCsvPath = ResolveOptionalPath(csvPath, normalizedSourcePath)
+            ?? throw new InvalidOperationException("CSV dispositivi non specificato.");
+        var projects = LoadDeviceProjects(normalizedCsvPath, log);
+
+        var deviceTypes = projects
+            .SelectMany(project => project.DeviceIps.Keys)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(deviceType => deviceType, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var inspectedProjects = projects
+            .Select(project => new DeviceCsvProjectInspection(
+                project.Montante,
+                project.DeviceIps
+                    .OrderBy(entry => entry.Key, StringComparer.OrdinalIgnoreCase)
+                    .Select(entry => new DeviceCsvDeviceInspection(
+                        entry.Key,
+                        entry.Value,
+                        project.DeviceLabels.GetValueOrDefault(entry.Key)))
+                    .ToList()))
+            .ToList();
+
+        return new DeviceCsvInspection(
+            normalizedCsvPath,
+            projects.Count,
+            projects.Sum(project => project.DeviceIps.Count),
+            deviceTypes,
+            inspectedProjects);
+    }
+
+    public static ModuleImpactInspection InspectModuleImpact(string sourcePath, string moduleName, bool includeTagFamily)
+    {
+        if (string.IsNullOrWhiteSpace(moduleName))
+        {
+            throw new InvalidOperationException("Inserisci il nome modulo da analizzare.");
+        }
+
+        var normalizedSourcePath = ResolveSourcePath(sourcePath);
+        var normalizedModuleName = moduleName.Trim();
+
+        using var templateContext = PrepareTemplateContext(normalizedSourcePath);
+        var templateFiles = GetTemplateItems(templateContext.TemplateRootPath)
+            .Where(item => !item.IsDirectory)
+            .ToList();
+        EnsureTemplateFiles(templateFiles, templateContext.TemplateRootPath);
+
+        var textFiles = LoadTextTemplateFiles(templateFiles);
+        var directTerms = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { normalizedModuleName };
+        var definitions = FindModuleDefinitions(textFiles, normalizedModuleName);
+        var rtuReferences = FindModuleRtuReferences(textFiles, normalizedModuleName, definitions);
+
+        foreach (var href in rtuReferences.Select(reference => reference.Href).Where(value => !string.IsNullOrWhiteSpace(value)))
+        {
+            directTerms.Add(href!);
+        }
+
+        foreach (var errorTag in rtuReferences.Select(reference => reference.ErrorTag).Where(value => !string.IsNullOrWhiteSpace(value)))
+        {
+            directTerms.Add(errorTag!);
+        }
+
+        var tags = definitions
+            .SelectMany(definition => definition.Tags)
+            .Concat(rtuReferences.Select(reference => reference.ErrorTag).Where(value => !string.IsNullOrWhiteSpace(value)).Cast<string>())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(value => value, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var directSearchTerms = SortSearchTerms(directTerms);
+        IEnumerable<string> tagTerms = tags;
+        if (includeTagFamily)
+        {
+            tagTerms = tagTerms.Concat(BuildFamilySearchTerms(normalizedModuleName, tags));
+        }
+
+        var tagSearchTerms = SortSearchTerms(tagTerms);
+        var searchTerms = SortSearchTerms(directSearchTerms.Concat(tagSearchTerms));
+
+        var directImpacts = textFiles
+            .Select(file => CountModuleImpact(file.RelativePath, file.Content, directSearchTerms))
+            .Where(impact => impact.TotalOccurrences > 0)
+            .OrderBy(impact => ImpactPriority(impact.FileName))
+            .ThenBy(impact => impact.FileName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var tagImpacts = textFiles
+            .Select(file => CountModuleImpact(file.RelativePath, file.Content, tagSearchTerms))
+            .Where(impact => impact.TotalOccurrences > 0)
+            .OrderBy(impact => ImpactPriority(impact.FileName))
+            .ThenBy(impact => impact.FileName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        return new ModuleImpactInspection(
+            normalizedSourcePath,
+            normalizedModuleName,
+            searchTerms,
+            directSearchTerms,
+            tagSearchTerms,
+            definitions,
+            rtuReferences,
+            tags,
+            directImpacts,
+            tagImpacts);
+    }
+
+    public static IReadOnlyList<ModuleCopyResult> CopyModuleToProjects(
+        string sourcePath,
+        string targetPath,
+        string? outputDirectory,
+        string moduleName,
+        string? moduleType = null,
+        IReadOnlyList<TextReplacement>? customReplacements = null,
+        Action<string>? log = null)
+    {
+        if (string.IsNullOrWhiteSpace(moduleName))
+        {
+            throw new InvalidOperationException("Inserisci il nome modulo da copiare.");
+        }
+
+        var normalizedSourcePath = ResolveSourcePath(sourcePath);
+        var normalizedOutputDirectory = ResolveOutputDirectory(outputDirectory);
+        var targetProjects = ResolveTargetProjects(targetPath);
+        var normalizedModuleName = moduleName.Trim();
+        var replacements = NormalizeTextReplacements(customReplacements ?? []);
+
+        using var sourceContext = PrepareTemplateContext(normalizedSourcePath);
+        var sourceItems = GetTemplateItems(sourceContext.TemplateRootPath)
+            .Where(item => !item.IsDirectory)
+            .ToList();
+        EnsureTemplateFiles(sourceItems, sourceContext.TemplateRootPath);
+
+        var inspection = InspectModuleImpact(normalizedSourcePath, normalizedModuleName, false);
+        if (inspection.Definitions.Count == 0)
+        {
+            throw new InvalidOperationException($"Modulo '{normalizedModuleName}' non trovato nel progetto sorgente.");
+        }
+
+        var normalizedModuleType = moduleType?.Trim();
+        var matchingDefinitions = inspection.Definitions
+            .Where(definition => DefinitionMatchesModuleType(definition, normalizedModuleType))
+            .ToList();
+        if (matchingDefinitions.Count == 0)
+        {
+            var filter = string.IsNullOrWhiteSpace(normalizedModuleType) ? string.Empty : $" con tipo '{normalizedModuleType}'";
+            throw new InvalidOperationException($"Modulo '{normalizedModuleName}'{filter} non trovato nel progetto sorgente.");
+        }
+
+        var definitionPaths = inspection.Definitions
+            .Select(definition => definition.FileName)
+            .Where(fileName => !IsPlcAutomationFile(fileName))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var relatedFilePaths = FindModuleRelatedFiles(sourceContext.TemplateRootPath, definitionPaths);
+        definitionPaths = definitionPaths
+            .Concat(relatedFilePaths)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var directTerms = inspection.DirectSearchTerms;
+        var moduleTerms = SortSearchTerms(directTerms.Concat(inspection.Tags));
+        var databaseTerms = SortSearchTerms(directTerms.Concat(definitionPaths.Select(Path.GetFileName).Where(value => !string.IsNullOrWhiteSpace(value)).Cast<string>()));
+        var results = new List<ModuleCopyResult>();
+        var failures = new List<string>();
+
+        log?.Invoke($"Modulo sorgente: {normalizedModuleName}");
+        if (!string.IsNullOrWhiteSpace(normalizedModuleType))
+        {
+            log?.Invoke($"Tipo modulo richiesto: {normalizedModuleType}");
+        }
+        if (replacements.Count > 0)
+        {
+            log?.Invoke("Sostituzioni custom: " + string.Join(", ", replacements.Select(replacement => $"{replacement.Find} -> {replacement.Replace}")));
+        }
+        log?.Invoke($"Progetto sorgente: {normalizedSourcePath}");
+        log?.Invoke($"Progetti destinazione: {targetProjects.Count}");
+
+        foreach (var targetProject in targetProjects)
+        {
+            try
+            {
+                using var targetContext = PrepareTemplateContext(targetProject);
+                var tempOutputDirectory = CreateTempDirectory(normalizedOutputDirectory);
+                try
+                {
+                    CopyDirectoryContents(targetContext.TemplateRootPath, tempOutputDirectory);
+
+                    var copiedFiles = CopyModuleDefinitionFiles(sourceContext.TemplateRootPath, tempOutputDirectory, definitionPaths, replacements);
+                    var rtuNodes = CopyRelatedXmlNodes(sourceContext.TemplateRootPath, tempOutputDirectory, "rtu.ccx", moduleTerms, replacements);
+                    var databaseNodes = CopyDirectXmlNodes(sourceContext.TemplateRootPath, tempOutputDirectory, "ddbb.dbx", databaseTerms, replacements);
+                    EnsureNoRestrictionSignatureInCcxFiles(tempOutputDirectory);
+                    var copiedModuleName = ApplyReplacements(normalizedModuleName, replacements);
+                    var outputName = Path.GetFileNameWithoutExtension(targetProject) + "_with_" + MakeSafeFileName(copiedModuleName);
+                    var archivePath = CreateProjectArchive(normalizedOutputDirectory, tempOutputDirectory, outputName);
+
+                    results.Add(new ModuleCopyResult(targetProject, archivePath, copiedFiles, rtuNodes, databaseNodes));
+                    log?.Invoke($"Creato: {archivePath} | file={copiedFiles} | rtu={rtuNodes} | ddbb={databaseNodes}");
+                }
+                finally
+                {
+                    DeleteDirectoryIfExists(tempOutputDirectory);
+                }
+            }
+            catch (Exception ex)
+            {
+                failures.Add($"{Path.GetFileName(targetProject)}: {ex.Message}");
+                log?.Invoke($"ERRORE {targetProject}: {ex.Message}");
+            }
+        }
+
+        if (failures.Count > 0)
+        {
+            throw new InvalidOperationException("Copia modulo completata con errori: " + string.Join(" | ", failures));
+        }
+
+        return results;
+    }
+
+    public static IReadOnlyList<string> BuildDeviceProjectsFromCsv(
+        string sourcePath,
+        string? outputDirectory,
+        string templateName,
+        string csvPath,
+        string? quadFind,
+        string? quadReplace,
+        Action<string>? log = null)
+    {
+        if (string.IsNullOrWhiteSpace(templateName))
+        {
+            throw new InvalidOperationException("Inserisci il montante template.");
+        }
+
+        var normalizedSourcePath = ResolveSourcePath(sourcePath);
+        var normalizedOutputDirectory = ResolveOutputDirectory(outputDirectory);
+        var normalizedTemplateName = templateName.Trim();
+        var normalizedCsvPath = ResolveOptionalPath(csvPath, normalizedSourcePath)
+            ?? throw new InvalidOperationException("CSV dispositivi non specificato.");
+
+        using var templateContext = PrepareGenericTemplateContext(normalizedSourcePath);
+        var templateFiles = GetTemplateItems(templateContext.TemplateRootPath);
+        EnsureTemplateFiles(templateFiles, templateContext.TemplateRootPath);
+        var isPlainDirectorySource = Directory.Exists(normalizedSourcePath);
+
+        var inspection = InspectTemplateRoot(templateContext.TemplateRootPath, normalizedTemplateName);
+        var projects = LoadDeviceProjects(normalizedCsvPath, log);
+        var templateBcuLabel = ReadTemplateBcuLabel(templateContext.TemplateRootPath);
+
+        log?.Invoke($"Template: {normalizedSourcePath}");
+        log?.Invoke($"Output: {normalizedOutputDirectory}");
+        log?.Invoke($"Montante template: {normalizedTemplateName}");
+        log?.Invoke($"Tipo progetto rilevato: {inspection.TemplateDeviceType}");
+        log?.Invoke($"IP server template: {inspection.ServerIp}");
+        log?.Invoke($"CSV dispositivi: {normalizedCsvPath}");
+        log?.Invoke($"Montanti da generare: {projects.Count}");
+        if (!string.IsNullOrWhiteSpace(quadFind) && !string.IsNullOrWhiteSpace(quadReplace))
+        {
+            log?.Invoke($"Quadriletterale: {quadFind.Trim()} -> {quadReplace.Trim()}");
+        }
+        if (inspection.TemplateDeviceType == "AS1" && !string.IsNullOrWhiteSpace(templateBcuLabel))
+        {
+            log?.Invoke($"LABEL_BCU template: {templateBcuLabel}");
+        }
+
+        var plans = new List<BuildPlan>();
+        foreach (var project in projects)
+        {
+            if (!project.DeviceIps.TryGetValue(inspection.TemplateDeviceType, out var targetServerIp))
+            {
+                throw new InvalidOperationException(
+                    $"Nel CSV manca il dispositivo '{inspection.TemplateDeviceType}' per il montante '{project.Montante}'.");
+            }
+
+            var fileSpecific = new Dictionary<string, List<TextReplacement>>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["rtu.ccx"] = [new TextReplacement(inspection.ServerIp, targetServerIp)]
+            };
+
+            foreach (var cidFile in templateFiles.Where(file =>
+                         !file.IsDirectory &&
+                         Path.GetExtension(file.RelativePath).Equals(".cid", StringComparison.OrdinalIgnoreCase)))
+            {
+                fileSpecific[cidFile.RelativePath] = [new TextReplacement(inspection.ServerIp, targetServerIp)];
+            }
+
+            foreach (var client in inspection.Clients)
+            {
+                if (!project.DeviceIps.TryGetValue(client.DeviceType, out var targetClientIp))
+                {
+                    throw new InvalidOperationException(
+                        $"Nel CSV manca il dispositivo client '{client.DeviceType}' per il montante '{project.Montante}'.");
+                }
+
+                fileSpecific[client.Href] = [new TextReplacement(client.CurrentIp, targetClientIp)];
+            }
+
+            var globalReplacements = new List<TextReplacement>
+            {
+                new TextReplacement(normalizedTemplateName, project.Montante)
+            };
+
+            if (!string.IsNullOrWhiteSpace(quadFind) && !string.IsNullOrWhiteSpace(quadReplace))
+            {
+                globalReplacements.Add(new TextReplacement(quadFind.Trim(), quadReplace.Trim()));
+            }
+
+            if (inspection.TemplateDeviceType == "AS1" &&
+                !string.IsNullOrWhiteSpace(templateBcuLabel) &&
+                project.DeviceLabels.TryGetValue("AS1", out var targetBcuLabel) &&
+                !string.IsNullOrWhiteSpace(targetBcuLabel))
+            {
+                var effectiveTemplateBcuLabel = ApplyReplacements(templateBcuLabel, globalReplacements);
+                fileSpecific["states.ccx"] = [new TextReplacement(effectiveTemplateBcuLabel, targetBcuLabel)];
+                log?.Invoke($"LABEL_BCU {project.Montante}: {targetBcuLabel}");
+            }
+
+            plans.Add(new BuildPlan(
+                project.Montante,
+                [new TextReplacement(normalizedTemplateName, project.Montante)],
+                globalReplacements,
+                fileSpecific));
+        }
+
+        return isPlainDirectorySource
+            ? ExecuteGenericDirectoryPlans(normalizedOutputDirectory, templateFiles, plans, log)
+            : ExecutePlans(normalizedOutputDirectory, templateFiles, plans, log);
+    }
+
+    public static PingerBatchResult InsertPingerModulesFromDeviceCsv(
+        string sourcePath,
+        string? destinationPath,
+        string? outputDirectory,
+        string templateName,
+        string csvPath,
+        string? quadFind,
+        string? quadReplace,
+        Action<string>? log = null)
+    {
+        if (string.IsNullOrWhiteSpace(templateName))
+        {
+            throw new InvalidOperationException("Inserisci il montante template PINGER.");
+        }
+
+        var normalizedSourcePath = ResolveSourcePath(sourcePath);
+        var normalizedDestinationPath = string.IsNullOrWhiteSpace(destinationPath)
+            ? normalizedSourcePath
+            : ResolveSourcePath(destinationPath);
+        var normalizedOutputDirectory = ResolveOutputDirectory(outputDirectory);
+        var templateModuleName = NormalizePingerModuleName(templateName);
+        var templateDeviceName = templateModuleName[..^"_PING".Length];
+        var normalizedCsvPath = ResolveOptionalPath(csvPath, normalizedSourcePath)
+            ?? throw new InvalidOperationException("CSV dispositivi non specificato.");
+        var projects = LoadPingerProjects(normalizedCsvPath);
+
+        using var sourceContext = PrepareTemplateContext(normalizedSourcePath);
+        using var destinationContext = PrepareTemplateContext(normalizedDestinationPath);
+        var sourceItems = GetTemplateItems(sourceContext.TemplateRootPath)
+            .Where(item => !item.IsDirectory)
+            .ToList();
+        EnsureTemplateFiles(sourceItems, sourceContext.TemplateRootPath);
+
+        var inspection = InspectModuleImpact(normalizedSourcePath, templateModuleName, false);
+        if (!inspection.Definitions.Any(definition => DefinitionMatchesModuleType(definition, "mPinger")))
+        {
+            throw new InvalidOperationException($"PINGER modello non trovato: {templateModuleName}");
+        }
+
+        var templateIp = inspection.Definitions
+            .FirstOrDefault(definition => DefinitionMatchesModuleType(definition, "mPinger"))
+            ?.Ip
+            ?? throw new InvalidOperationException($"IP PINGER modello non trovato: {templateModuleName}");
+
+        var definitionPaths = inspection.Definitions
+            .Select(definition => definition.FileName)
+            .Where(fileName => !IsPlcAutomationFile(fileName))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var pingerXtTags = BuildPingerXtTags(inspection.Tags);
+
+        log?.Invoke($"Progetto base: {normalizedSourcePath}");
+        log?.Invoke($"Progetto destinazione: {normalizedDestinationPath}");
+        log?.Invoke($"Output: {normalizedOutputDirectory}");
+        log?.Invoke($"Modulo template PINGER: {templateModuleName}");
+        log?.Invoke($"CSV dispositivi: {normalizedCsvPath}");
+        if (!string.IsNullOrWhiteSpace(quadFind) && !string.IsNullOrWhiteSpace(quadReplace))
+        {
+            log?.Invoke($"Quadriletterale: {quadFind.Trim()} -> {quadReplace.Trim()}");
+        }
+
+        var tempOutputDirectory = CreateTempDirectory(normalizedOutputDirectory);
+        var copiedFiles = 0;
+        var rtuNodes = 0;
+        var databaseNodes = 0;
+        var moduleCount = 0;
+
+        try
+        {
+            CopyDirectoryContents(destinationContext.TemplateRootPath, tempOutputDirectory);
+
+            foreach (var project in projects)
+            {
+                foreach (var entry in project.DeviceIps)
+                {
+                    var targetDeviceName = $"{project.Montante}_{entry.Key}";
+                    var targetModuleName = $"{targetDeviceName}_PING";
+                    var fileReplacements = BuildPingerDefinitionFileReplacements(definitionPaths, targetDeviceName);
+
+                    var replacements = new List<TextReplacement>
+                    {
+                        new(templateModuleName, targetModuleName),
+                        new(templateDeviceName, targetDeviceName),
+                        new($"_{templateDeviceName}_", $"_{targetDeviceName}_"),
+                        new(GetMountName(templateDeviceName), project.Montante),
+                        new(GetDeviceSuffix(templateDeviceName), entry.Key),
+                        new(templateIp, entry.Value)
+                    };
+                    replacements.AddRange(fileReplacements);
+
+                    if (!string.IsNullOrWhiteSpace(quadFind) && !string.IsNullOrWhiteSpace(quadReplace))
+                    {
+                        replacements.Add(new TextReplacement(quadFind.Trim(), quadReplace.Trim()));
+                    }
+
+                    var normalizedReplacements = NormalizeTextReplacements(replacements);
+                    var directTerms = inspection.DirectSearchTerms;
+                    var moduleTerms = SortSearchTerms(directTerms.Concat(inspection.Tags));
+                    var databaseTerms = SortSearchTerms(directTerms.Concat(definitionPaths.Select(Path.GetFileName).Where(value => !string.IsNullOrWhiteSpace(value)).Cast<string>()));
+
+                    copiedFiles += CopyModuleDefinitionFiles(sourceContext.TemplateRootPath, tempOutputDirectory, definitionPaths, normalizedReplacements);
+                    rtuNodes += CopyRelatedXmlNodes(sourceContext.TemplateRootPath, tempOutputDirectory, "rtu.ccx", moduleTerms, normalizedReplacements);
+                    databaseNodes += CopyDirectXmlNodes(sourceContext.TemplateRootPath, tempOutputDirectory, "ddbb.dbx", databaseTerms, normalizedReplacements);
+                    var xtNodes = CopyPingerXtNodesAcrossXmlFiles(sourceContext.TemplateRootPath, tempOutputDirectory, pingerXtTags, normalizedReplacements);
+                    moduleCount++;
+                    log?.Invoke($"PINGER {templateModuleName} -> {targetModuleName} | IP {templateIp} -> {entry.Value} | XT={xtNodes}");
+                }
+            }
+
+            EnsureNoRestrictionSignatureInCcxFiles(tempOutputDirectory);
+            var outputName = Path.GetFileNameWithoutExtension(normalizedDestinationPath) + "_with_pingers";
+            var archivePath = CreateProjectArchive(normalizedOutputDirectory, tempOutputDirectory, outputName);
+            log?.Invoke($"Creato: {archivePath} | moduli={moduleCount} | file={copiedFiles} | rtu={rtuNodes} | ddbb={databaseNodes}");
+
+            return new PingerBatchResult(archivePath, moduleCount, copiedFiles, rtuNodes, databaseNodes);
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(tempOutputDirectory);
+        }
+    }
+
+    public static GenericCsvInspection InspectGenericCsv(string sourcePath, string csvPath)
+    {
+        var normalizedSourcePath = ResolveSourcePath(sourcePath);
+        var normalizedCsvPath = ResolveOptionalPath(csvPath, normalizedSourcePath)
+            ?? throw new InvalidOperationException("CSV generico non specificato.");
+        var csv = LoadGenericCsv(normalizedCsvPath);
+        return new GenericCsvInspection(normalizedCsvPath, csv.Rows.Count, csv.Columns, csv.ColumnPreviews, csv.RowPreviews);
+    }
+
+    public static IReadOnlyList<string> BuildGenericCsvBatch(
+        string sourcePath,
+        string? outputDirectory,
+        string csvPath,
+        string outputColumn,
+        IReadOnlyList<GenericCsvMapping> mappings,
+        Action<string>? log = null)
+    {
+        var normalizedSourcePath = ResolveSourcePath(sourcePath);
+        var normalizedOutputDirectory = ResolveOutputDirectory(outputDirectory);
+        var normalizedCsvPath = ResolveOptionalPath(csvPath, normalizedSourcePath)
+            ?? throw new InvalidOperationException("CSV generico non specificato.");
+        var normalizedMappings = NormalizeGenericCsvMappings(mappings);
+        var csv = LoadGenericCsv(normalizedCsvPath);
+        var replacementMappings = normalizedMappings
+            .Where(mapping => !string.IsNullOrWhiteSpace(mapping.Find))
+            .ToList();
+        var outputMapping = normalizedMappings.SingleOrDefault(mapping => mapping.UseAsOutputName);
+        var outputColumnName = ResolveGenericCsvColumn(
+            csv,
+            outputMapping?.CsvColumn ?? (string.IsNullOrWhiteSpace(outputColumn) ? normalizedMappings[0].CsvColumn : outputColumn),
+            "colonna nome file");
+
+        if (IsStandaloneFileSource(normalizedSourcePath))
+        {
+            if (replacementMappings.Count == 0)
+            {
+                throw new InvalidOperationException("Per un file singolo serve almeno una riga con testo template da sostituire.");
+            }
+
+            var firstMapping = replacementMappings[0];
+            var firstColumn = ResolveGenericCsvColumn(csv, firstMapping.CsvColumn, "prima colonna mapping");
+            var jobs = csv.Rows.Select((row, index) =>
+            {
+                var replacements = replacementMappings
+                    .Skip(1)
+                    .Select(mapping =>
+                    {
+                        var column = ResolveGenericCsvColumn(csv, mapping.CsvColumn, "colonna mapping");
+                        return new TextReplacement(mapping.Find, row[column]);
+                    })
+                    .ToList();
+
+                return new GenericReplaceJob(
+                    row[firstColumn],
+                    ResolveGenericCsvOutputName(row[outputColumnName], index + 1),
+                    AdditionalReplacements: replacements);
+            }).ToList();
+
+            return BuildGenericBatch(
+                normalizedSourcePath,
+                normalizedOutputDirectory,
+                firstMapping.Find,
+                jobs,
+                log);
+        }
+
+        using var templateContext = PrepareGenericTemplateContext(normalizedSourcePath);
+        var templateFiles = GetTemplateItems(templateContext.TemplateRootPath);
+        EnsureTemplateFiles(templateFiles, templateContext.TemplateRootPath);
+        var isPlainDirectorySource = Directory.Exists(normalizedSourcePath);
+
+        log?.Invoke($"Template: {normalizedSourcePath}");
+        log?.Invoke($"Output: {normalizedOutputDirectory}");
+        log?.Invoke($"CSV generico: {normalizedCsvPath}");
+        log?.Invoke($"Righe CSV: {csv.Rows.Count}");
+        log?.Invoke($"Colonna nome file: {outputColumnName}");
+        log?.Invoke("Mapping: " + string.Join(", ", normalizedMappings.Select(mapping =>
+            string.IsNullOrWhiteSpace(mapping.Find)
+                ? $"{mapping.CsvColumn} -> solo nome file"
+                : $"{mapping.CsvColumn} -> {mapping.Find}")));
+
+        var plans = csv.Rows.Select((row, index) =>
+        {
+            var replacements = replacementMappings
+                .Select(mapping =>
+                {
+                    var column = ResolveGenericCsvColumn(csv, mapping.CsvColumn, "colonna mapping");
+                    return new TextReplacement(mapping.Find, row[column]);
+                })
+                .ToList();
+
+            return new BuildPlan(
+                ResolveGenericCsvOutputName(row[outputColumnName], index + 1),
+                replacements,
+                replacements,
+                new Dictionary<string, List<TextReplacement>>(StringComparer.OrdinalIgnoreCase));
+        }).ToList();
+
+        return isPlainDirectorySource
+            ? ExecuteGenericDirectoryPlans(normalizedOutputDirectory, templateFiles, plans, log)
+            : ExecutePlans(normalizedOutputDirectory, templateFiles, plans, log);
+    }
+
+    private static IReadOnlyList<string> ExecutePlans(
+        string outputDirectory,
+        IReadOnlyList<TemplateItem> templateFiles,
+        IReadOnlyList<BuildPlan> plans,
+        Action<string>? log)
+    {
+        var createdFiles = new List<string>();
+        var failures = new List<string>();
+
+        foreach (var plan in plans)
+        {
+            try
+            {
+                var archivePath = BuildTarget(outputDirectory, templateFiles, plan, log);
+                createdFiles.Add(archivePath);
+                log?.Invoke($"Creato: {archivePath}");
+            }
+            catch (Exception ex)
+            {
+                failures.Add($"{plan.OutputName}: {ex.Message}");
+                log?.Invoke($"ERRORE {plan.OutputName}: {ex.Message}");
+            }
+        }
+
+        if (failures.Count > 0)
+        {
+            throw new InvalidOperationException("Elaborazione completata con errori: " + string.Join(" | ", failures));
+        }
+
+        return createdFiles;
+    }
+
+    private static string BuildTarget(string outputDirectory, IReadOnlyList<TemplateItem> templateFiles, BuildPlan plan, Action<string>? log)
+    {
+        var tempOutputDirectory = CreateTempDirectory(outputDirectory);
+
+        try
+        {
+            foreach (var sourceFile in templateFiles)
+            {
+                var destinationRelativePath = sourceFile.IsDirectory
+                    ? sourceFile.RelativePath
+                    : BuildDestinationRelativePath(sourceFile.RelativePath, plan.FileNameReplacements);
+                var destinationPath = Path.Combine(tempOutputDirectory, destinationRelativePath);
+
+                if (sourceFile.IsDirectory)
+                {
+                    Directory.CreateDirectory(destinationPath);
+                    continue;
+                }
+
+                Directory.CreateDirectory(Path.GetDirectoryName(destinationPath) ?? tempOutputDirectory);
+
+                var bytes = File.ReadAllBytes(sourceFile.FullPath);
+                if (TryDecodeText(bytes, out var content, out var encoding))
+                {
+                    content = ApplyReplacements(content, plan.GlobalReplacements, out var replacementCount);
+
+                    if (TryGetFileSpecificReplacements(plan.FileSpecificReplacements, sourceFile.RelativePath, out var specific))
+                    {
+                        content = ApplyReplacements(content, specific, out var specificCount);
+                        replacementCount += specificCount;
+                    }
+
+                    if (Path.GetExtension(sourceFile.RelativePath).Equals(".ccx", StringComparison.OrdinalIgnoreCase))
+                    {
+                        content = EnsureNoRestrictionSignature(content);
+                    }
+
+                    File.WriteAllText(destinationPath, content, encoding);
+                    if (replacementCount > 0)
+                    {
+                        log?.Invoke($"Modificato testo: {sourceFile.RelativePath} ({replacementCount} sostituzioni)");
+                    }
+                }
+                else
+                {
+                    File.Copy(sourceFile.FullPath, destinationPath, true);
+                }
+            }
+
+            EnsureNoRestrictionSignatureInCcxFiles(tempOutputDirectory);
+            return CreateProjectArchive(outputDirectory, tempOutputDirectory, plan.OutputName);
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(tempOutputDirectory);
+        }
+    }
+
+    private static IReadOnlyList<string> ExecuteGenericDirectoryPlans(
+        string outputDirectory,
+        IReadOnlyList<TemplateItem> templateFiles,
+        IReadOnlyList<BuildPlan> plans,
+        Action<string>? log)
+    {
+        var createdDirectories = new List<string>();
+        var failures = new List<string>();
+
+        foreach (var plan in plans)
+        {
+            try
+            {
+                var targetDirectory = Path.Combine(outputDirectory, MakeSafeFileName(plan.OutputName));
+                if (Directory.Exists(targetDirectory))
+                {
+                    Directory.Delete(targetDirectory, true);
+                }
+
+                BuildGenericDirectoryTarget(targetDirectory, templateFiles, plan, log);
+                createdDirectories.Add(targetDirectory);
+                log?.Invoke($"Creata cartella: {targetDirectory}");
+            }
+            catch (Exception ex)
+            {
+                failures.Add($"{plan.OutputName}: {ex.Message}");
+                log?.Invoke($"ERRORE {plan.OutputName}: {ex.Message}");
+            }
+        }
+
+        if (failures.Count > 0)
+        {
+            throw new InvalidOperationException("Elaborazione completata con errori: " + string.Join(" | ", failures));
+        }
+
+        return createdDirectories;
+    }
+
+    private static void BuildGenericDirectoryTarget(
+        string targetDirectory,
+        IReadOnlyList<TemplateItem> templateFiles,
+        BuildPlan plan,
+        Action<string>? log)
+    {
+        foreach (var sourceFile in templateFiles)
+        {
+            var destinationRelativePath = sourceFile.IsDirectory
+                ? sourceFile.RelativePath
+                : BuildDestinationRelativePath(sourceFile.RelativePath, plan.FileNameReplacements);
+            var destinationPath = Path.Combine(targetDirectory, destinationRelativePath);
+
+            if (sourceFile.IsDirectory)
+            {
+                Directory.CreateDirectory(destinationPath);
+                continue;
+            }
+
+            Directory.CreateDirectory(Path.GetDirectoryName(destinationPath) ?? targetDirectory);
+
+            if (IsEditableExcelWorkbook(sourceFile.FullPath))
+            {
+                File.Copy(sourceFile.FullPath, destinationPath, true);
+                var replacementCount = ApplyExcelWorkbookReplacements(destinationPath, plan.GlobalReplacements);
+                if (replacementCount > 0)
+                {
+                    log?.Invoke($"Modificato Excel: {sourceFile.RelativePath} ({replacementCount} sostituzioni)");
+                }
+
+                continue;
+            }
+
+            var bytes = File.ReadAllBytes(sourceFile.FullPath);
+            if (TryDecodeText(bytes, out var content, out var encoding))
+            {
+                content = ApplyReplacements(content, plan.GlobalReplacements, out var replacementCount);
+
+                if (TryGetFileSpecificReplacements(plan.FileSpecificReplacements, sourceFile.RelativePath, out var specific))
+                {
+                    content = ApplyReplacements(content, specific, out var specificCount);
+                    replacementCount += specificCount;
+                }
+
+                File.WriteAllText(destinationPath, content, encoding);
+                if (replacementCount > 0)
+                {
+                    log?.Invoke($"Modificato testo: {sourceFile.RelativePath} ({replacementCount} sostituzioni)");
+                }
+            }
+            else
+            {
+                File.Copy(sourceFile.FullPath, destinationPath, true);
+            }
+        }
+    }
+
+    private static IReadOnlyList<string> BuildStandaloneTextBatch(
+        string sourceFilePath,
+        string outputDirectory,
+        string baseFind,
+        IReadOnlyList<GenericReplaceJob> jobs,
+        Action<string>? log)
+    {
+        var createdFiles = new List<string>();
+        var failures = new List<string>();
+        var sourceFileName = Path.GetFileName(sourceFilePath);
+
+        var isExcelWorkbook = IsEditableExcelWorkbook(sourceFilePath);
+
+        log?.Invoke(isExcelWorkbook ? $"File Excel sorgente: {sourceFilePath}" : $"File testo sorgente: {sourceFilePath}");
+        log?.Invoke($"Output: {outputDirectory}");
+        log?.Invoke($"Find principale: {baseFind}");
+        log?.Invoke($"Righe da generare: {jobs.Count}");
+
+        for (var i = 0; i < jobs.Count; i++)
+        {
+            var job = jobs[i];
+            var outputFileName = ResolveStandaloneOutputFileName(sourceFileName, baseFind, job, i + 1);
+            var outputPath = Path.Combine(outputDirectory, outputFileName);
+            var replacements = new List<TextReplacement> { new(baseFind, job.ReplaceValue) };
+            replacements.AddRange(job.AdditionalReplacements ?? []);
+
+            if (!string.IsNullOrWhiteSpace(job.ExtraFind))
+            {
+                replacements.Add(new TextReplacement(job.ExtraFind!, job.ExtraReplace!));
+            }
+
+            try
+            {
+                if (isExcelWorkbook)
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(outputPath) ?? outputDirectory);
+                    File.Copy(sourceFilePath, outputPath, true);
+                    var replacementCount = ApplyExcelWorkbookReplacements(outputPath, replacements);
+                    createdFiles.Add(outputPath);
+                    log?.Invoke($"Creato file Excel: {outputPath} ({replacementCount} sostituzioni)");
+                }
+                else
+                {
+                    var bytes = File.ReadAllBytes(sourceFilePath);
+                    if (!TryDecodeText(bytes, out var content, out var encoding))
+                    {
+                        throw new InvalidOperationException($"Il file non sembra testuale: {sourceFileName}");
+                    }
+
+                    content = ApplyReplacements(content, replacements, out var replacementCount);
+                    Directory.CreateDirectory(Path.GetDirectoryName(outputPath) ?? outputDirectory);
+                    File.WriteAllText(outputPath, content, encoding);
+                    createdFiles.Add(outputPath);
+                    log?.Invoke($"Creato file testo: {outputPath} ({replacementCount} sostituzioni)");
+                }
+            }
+            catch (Exception ex)
+            {
+                failures.Add($"{outputFileName}: {ex.Message}");
+                log?.Invoke($"ERRORE {outputFileName}: {ex.Message}");
+            }
+        }
+
+        if (failures.Count > 0)
+        {
+            throw new InvalidOperationException("Elaborazione completata con errori: " + string.Join(" | ", failures));
+        }
+
+        return createdFiles;
+    }
+
+    private static bool IsEditableExcelWorkbook(string filePath)
+    {
+        var extension = Path.GetExtension(filePath);
+        return extension.Equals(".xlsx", StringComparison.OrdinalIgnoreCase) ||
+            extension.Equals(".xlsm", StringComparison.OrdinalIgnoreCase) ||
+            extension.Equals(".xls", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static int ApplyExcelWorkbookReplacements(string workbookPath, IReadOnlyList<TextReplacement> replacements)
+    {
+        var replacementCount = 0;
+
+        IWorkbook workbook;
+        using (var input = File.OpenRead(workbookPath))
+        {
+            workbook = WorkbookFactory.Create(input);
+        }
+
+        for (var sheetIndex = 0; sheetIndex < workbook.NumberOfSheets; sheetIndex++)
+        {
+            var sheet = workbook.GetSheetAt(sheetIndex);
+            if (sheet is null)
+            {
+                continue;
+            }
+
+            foreach (IRow row in sheet)
+            {
+                foreach (ICell cell in row)
+                {
+                    if (cell.CellType == CellType.String)
+                    {
+                        var original = cell.StringCellValue;
+                        var updated = ApplyReplacements(original, replacements, out var cellReplacementCount);
+                        if (cellReplacementCount > 0)
+                        {
+                            cell.SetCellValue(updated);
+                            replacementCount += cellReplacementCount;
+                        }
+                    }
+                    else if (cell.CellType == CellType.Formula)
+                    {
+                        var originalFormula = cell.CellFormula;
+                        var updatedFormula = ApplyReplacements(originalFormula, replacements, out var formulaReplacementCount);
+                        if (formulaReplacementCount > 0)
+                        {
+                            cell.SetCellFormula(updatedFormula);
+                            replacementCount += formulaReplacementCount;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (replacementCount > 0)
+        {
+            var tempPath = Path.Combine(Path.GetDirectoryName(workbookPath) ?? AppContext.BaseDirectory, $"{Guid.NewGuid():N}.tmp");
+            try
+            {
+                using (var output = File.Create(tempPath))
+                {
+                    workbook.Write(output);
+                }
+
+                File.Copy(tempPath, workbookPath, true);
+            }
+            finally
+            {
+                File.Delete(tempPath);
+            }
+        }
+
+        workbook.Close();
+        return replacementCount;
+    }
+
+    private static string ResolveStandaloneOutputFileName(string sourceFileName, string baseFind, GenericReplaceJob job, int rowNumber)
+    {
+        var extension = Path.GetExtension(sourceFileName);
+
+        if (!string.IsNullOrWhiteSpace(job.OutputName))
+        {
+            var requestedOutputName = job.OutputName.Trim();
+            return string.IsNullOrEmpty(Path.GetExtension(requestedOutputName))
+                ? requestedOutputName + extension
+                : requestedOutputName;
+        }
+
+        var replacedFileName = ApplyReplacements(sourceFileName, [new TextReplacement(baseFind, job.ReplaceValue)]);
+        if (!replacedFileName.Equals(sourceFileName, StringComparison.OrdinalIgnoreCase))
+        {
+            return replacedFileName;
+        }
+
+        var safeReplaceValue = MakeSafeFileName(job.ReplaceValue);
+        if (!string.IsNullOrWhiteSpace(safeReplaceValue))
+        {
+            return $"{safeReplaceValue}{extension}";
+        }
+
+        var baseName = Path.GetFileNameWithoutExtension(sourceFileName);
+        return $"{baseName}_rp{rowNumber}{extension}";
+    }
+
+    private static string MakeSafeFileName(string value)
+    {
+        var invalidChars = Path.GetInvalidFileNameChars();
+        var buffer = new StringBuilder();
+        foreach (var ch in value.Trim())
+        {
+            buffer.Append(invalidChars.Contains(ch) ? '_' : ch);
+        }
+
+        return buffer.ToString().Trim();
+    }
+
+    private static string BuildDestinationRelativePath(string relativePath, IReadOnlyList<TextReplacement> fileNameReplacements)
+    {
+        var directory = Path.GetDirectoryName(relativePath);
+        var fileName = Path.GetFileName(relativePath);
+        var destinationFileName = ApplyReplacements(fileName, fileNameReplacements);
+        return string.IsNullOrWhiteSpace(directory) ? destinationFileName : Path.Combine(directory, destinationFileName);
+    }
+
+    private static bool TryGetFileSpecificReplacements(
+        IReadOnlyDictionary<string, List<TextReplacement>> replacements,
+        string relativePath,
+        out List<TextReplacement> specific)
+    {
+        if (replacements.TryGetValue(relativePath, out specific!))
+        {
+            return true;
+        }
+
+        return replacements.TryGetValue(Path.GetFileName(relativePath), out specific!);
+    }
+
+    private static bool TryDecodeText(byte[] bytes, out string content, out Encoding encoding)
+    {
+        content = string.Empty;
+        encoding = Encoding.Default;
+
+        if (bytes.Length == 0)
+        {
+            return true;
+        }
+
+        if (bytes.Contains((byte)0))
+        {
+            return false;
+        }
+
+        if (!LooksLikeTextBytes(bytes))
+        {
+            return false;
+        }
+
+        var offset = 0;
+        if (HasPrefix(bytes, [0xEF, 0xBB, 0xBF]))
+        {
+            encoding = StrictUtf8Encoding;
+            offset = 3;
+        }
+        else if (HasPrefix(bytes, [0xFF, 0xFE]))
+        {
+            encoding = StrictUnicodeEncoding;
+            offset = 2;
+        }
+        else if (HasPrefix(bytes, [0xFE, 0xFF]))
+        {
+            encoding = StrictBigEndianUnicodeEncoding;
+            offset = 2;
+        }
+
+        try
+        {
+            content = encoding.GetString(bytes, offset, bytes.Length - offset);
+        }
+        catch (DecoderFallbackException)
+        {
+            return false;
+        }
+
+        return LooksLikeText(content);
+    }
+
+    private static bool HasPrefix(byte[] bytes, byte[] prefix)
+    {
+        if (bytes.Length < prefix.Length)
+        {
+            return false;
+        }
+
+        for (var i = 0; i < prefix.Length; i++)
+        {
+            if (bytes[i] != prefix[i])
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool LooksLikeText(string content)
+    {
+        if (content.Length == 0)
+        {
+            return true;
+        }
+
+        var controlCount = content.Count(ch =>
+            char.IsControl(ch) &&
+            ch is not '\r' and not '\n' and not '\t' and not '\f');
+
+        return controlCount == 0 || controlCount <= Math.Max(2, content.Length / 100);
+    }
+
+    private static bool LooksLikeTextBytes(byte[] bytes)
+    {
+        var controlCount = bytes.Count(value =>
+            value < 32 &&
+            value is not (byte)'\r' and not (byte)'\n' and not (byte)'\t' and not (byte)'\f');
+
+        return controlCount == 0 || controlCount <= Math.Max(2, bytes.Length / 100);
+    }
+
+    private static TemplateInspection InspectTemplateRoot(string templateRootPath, string templateName)
+    {
+        var rtuPath = Path.Combine(templateRootPath, "rtu.ccx");
+        if (!File.Exists(rtuPath))
+        {
+            throw new InvalidOperationException("Nel template manca il file rtu.ccx.");
+        }
+
+        var rtuDocument = XDocument.Load(rtuPath, LoadOptions.PreserveWhitespace);
+        var label = ReadElementValue(rtuDocument, "general", "label")
+            ?? ReadElementValue(rtuDocument, "CCX_device", "name")
+            ?? throw new InvalidOperationException("Impossibile leggere il label del progetto.");
+
+        var templateDeviceType = DetectTemplateDeviceType(label)
+            ?? throw new InvalidOperationException("Impossibile capire il tipo progetto dal label del template.");
+
+        var serverIp = DetectServerIp(rtuDocument)
+            ?? throw new InvalidOperationException("Impossibile leggere l'IP server da rtu.ccx.");
+
+        var clients = new List<TemplateClientLink>();
+        var seenClientFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var module in rtuDocument.Descendants().Where(node => node.Name.LocalName.Equals("m61850", StringComparison.OrdinalIgnoreCase)))
+        {
+            var ccxLabel = module.Attribute("ccx_label")?.Value;
+            var href = module.Attribute("href")?.Value;
+            var deviceType = DetectClientTypeFromLabel(ccxLabel);
+
+            if (deviceType is null || string.IsNullOrWhiteSpace(href))
+            {
+                continue;
+            }
+
+            var clientPath = Path.Combine(templateRootPath, href);
+            if (!File.Exists(clientPath))
+            {
+                throw new InvalidOperationException($"Il client '{ccxLabel}' punta a un file mancante: {href}");
+            }
+
+            var clientDocument = XDocument.Load(clientPath, LoadOptions.PreserveWhitespace);
+            var clientIp = clientDocument
+                .Descendants()
+                .FirstOrDefault(node => node.Name.LocalName.Equals("IP_addr", StringComparison.OrdinalIgnoreCase))
+                ?.Value
+                ?.Trim();
+
+            if (string.IsNullOrWhiteSpace(clientIp))
+            {
+                throw new InvalidOperationException($"Nel file '{href}' manca il nodo <IP_addr>.");
+            }
+
+            if (seenClientFiles.Add(href))
+            {
+                clients.Add(new TemplateClientLink(deviceType, href, clientIp));
+            }
+        }
+
+        foreach (var client in DiscoverIedClients(templateRootPath))
+        {
+            if (seenClientFiles.Add(client.Href))
+            {
+                clients.Add(client);
+            }
+        }
+
+        return new TemplateInspection(templateName.Trim(), templateDeviceType, serverIp.Trim(), clients);
+    }
+
+    private static IReadOnlyList<TextTemplateFile> LoadTextTemplateFiles(IReadOnlyList<TemplateItem> templateFiles)
+    {
+        var files = new List<TextTemplateFile>();
+        foreach (var item in templateFiles)
+        {
+            var bytes = File.ReadAllBytes(item.FullPath);
+            if (!TryDecodeText(bytes, out var content, out _))
+            {
+                continue;
+            }
+
+            files.Add(new TextTemplateFile(item.FullPath, item.RelativePath.Replace('\\', '/'), content));
+        }
+
+        return files;
+    }
+
+    private static IReadOnlyList<ModuleDefinition> FindModuleDefinitions(
+        IReadOnlyList<TextTemplateFile> textFiles,
+        string moduleName)
+    {
+        var definitions = new List<ModuleDefinition>();
+        foreach (var file in textFiles.Where(file => ContainsOrdinalIgnoreCase(file.Content, moduleName)))
+        {
+            var extension = Path.GetExtension(file.RelativePath);
+            if (!extension.Equals(".dbx", StringComparison.OrdinalIgnoreCase) &&
+                !extension.Equals(".ccx", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (!TryParseXml(file.Content, out var document))
+            {
+                if (!Path.GetFileNameWithoutExtension(file.RelativePath).Equals(moduleName, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                definitions.Add(new ModuleDefinition(
+                    file.RelativePath,
+                    extension.TrimStart('.').ToUpperInvariant(),
+                    null,
+                    null,
+                    null,
+                    ExtractTagsWithRegex(file.Content)));
+                continue;
+            }
+
+            var label = ReadElementValue(document, "general", "label")
+                ?? ReadElementValue(document, "CCX_device", "name")
+                ?? document.Descendants()
+                    .FirstOrDefault(node =>
+                        node.Name.LocalName.Equals("IED", StringComparison.OrdinalIgnoreCase) &&
+                        string.Equals(node.Attribute("name")?.Value, moduleName, StringComparison.OrdinalIgnoreCase))
+                    ?.Attribute("name")
+                    ?.Value;
+
+            var fileNameMatches = Path.GetFileNameWithoutExtension(file.RelativePath).Equals(moduleName, StringComparison.OrdinalIgnoreCase);
+            var labelMatches = string.Equals(label, moduleName, StringComparison.OrdinalIgnoreCase);
+            if (!fileNameMatches && !labelMatches)
+            {
+                continue;
+            }
+
+            var deviceType = ReadElementValue(document, "CCX_device", "type")
+                ?? document.Descendants()
+                    .FirstOrDefault(node => node.Name.LocalName.Equals("IED", StringComparison.OrdinalIgnoreCase))
+                    ?.Attribute("protocol")
+                    ?.Value;
+
+            var ip = ReadElementValue(document, "comms", "IP")
+                ?? document.Descendants()
+                    .FirstOrDefault(node =>
+                        node.Name.LocalName.Equals("IP_addr", StringComparison.OrdinalIgnoreCase) ||
+                        node.Name.LocalName.Equals("IP", StringComparison.OrdinalIgnoreCase))
+                    ?.Value
+                    ?.Trim();
+
+            definitions.Add(new ModuleDefinition(
+                file.RelativePath,
+                extension.TrimStart('.').ToUpperInvariant(),
+                label,
+                deviceType,
+                ip,
+                ExtractXmlTags(document)));
+        }
+
+        return definitions
+            .OrderBy(definition => definition.FileName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static IReadOnlyList<ModuleRtuReference> FindModuleRtuReferences(
+        IReadOnlyList<TextTemplateFile> textFiles,
+        string moduleName,
+        IReadOnlyList<ModuleDefinition> definitions)
+    {
+        var rtuFile = textFiles.FirstOrDefault(file => Path.GetFileName(file.RelativePath).Equals("rtu.ccx", StringComparison.OrdinalIgnoreCase));
+        if (rtuFile is null || !TryParseXml(rtuFile.Content, out var document))
+        {
+            return [];
+        }
+
+        var definitionFiles = definitions
+            .Select(definition => definition.FileName)
+            .Select(Path.GetFileName)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var references = new List<ModuleRtuReference>();
+        foreach (var node in document.Descendants())
+        {
+            var href = node.Attribute("href")?.Value;
+            var label = node.Attribute("ccx_label")?.Value;
+            var errorTag = node.Attribute("errorTag")?.Value;
+            var isMatch =
+                string.Equals(label, moduleName, StringComparison.OrdinalIgnoreCase) ||
+                (!string.IsNullOrWhiteSpace(href) && definitionFiles.Contains(Path.GetFileName(href)));
+
+            if (!isMatch)
+            {
+                continue;
+            }
+
+            references.Add(new ModuleRtuReference(
+                node.Name.LocalName,
+                node.Attribute("id")?.Value,
+                href,
+                label,
+                errorTag,
+                node.Attribute("disable")?.Value));
+        }
+
+        return references;
+    }
+
+    private static IReadOnlyList<string> SortSearchTerms(IEnumerable<string> terms)
+    {
+        return terms
+            .Where(term => !string.IsNullOrWhiteSpace(term))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderByDescending(term => term.Length)
+            .ThenBy(term => term, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static IReadOnlyList<string> ExtractXmlTags(XDocument document)
+    {
+        return document
+            .Descendants()
+            .Select(node => node.Attribute("tag")?.Value)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Cast<string>()
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(value => value, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static IReadOnlyList<string> ExtractTagsWithRegex(string content)
+    {
+        return Regex.Matches(content, "\\btag\\s*=\\s*\"(?<tag>[^\"]+)\"", RegexOptions.IgnoreCase)
+            .Select(match => match.Groups["tag"].Value)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(value => value, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static IReadOnlyList<string> BuildPingerXtTags(IReadOnlyList<string> tags)
+    {
+        return tags
+            .Where(tag => tag.EndsWith("_BI", StringComparison.OrdinalIgnoreCase))
+            .Select(tag => tag[..^"_BI".Length] + "_XT")
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(tag => tag, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static IReadOnlyList<string> BuildFamilySearchTerms(string moduleName, IReadOnlyList<string> tags)
+    {
+        var terms = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var tagFamily = LongestTokenPrefix(tags);
+        if (!string.IsNullOrWhiteSpace(tagFamily))
+        {
+            terms.Add(tagFamily);
+        }
+        else
+        {
+            var moduleFamily = RemoveLastToken(moduleName);
+            if (!string.IsNullOrWhiteSpace(moduleFamily))
+            {
+                terms.Add(moduleFamily);
+            }
+        }
+
+        return terms.ToList();
+    }
+
+    private static string? RemoveLastToken(string value)
+    {
+        var index = value.LastIndexOf('_');
+        return index > 0 ? value[..index] : null;
+    }
+
+    private static string? LongestTokenPrefix(IReadOnlyList<string> values)
+    {
+        if (values.Count == 0)
+        {
+            return null;
+        }
+
+        var tokenized = values
+            .Select(value => value.Split('_', StringSplitOptions.RemoveEmptyEntries))
+            .Where(tokens => tokens.Length > 1)
+            .ToList();
+        if (tokenized.Count == 0)
+        {
+            return null;
+        }
+
+        var prefix = new List<string>();
+        for (var i = 0; i < tokenized.Min(tokens => tokens.Length) - 1; i++)
+        {
+            var candidate = tokenized[0][i];
+            if (tokenized.All(tokens => string.Equals(tokens[i], candidate, StringComparison.OrdinalIgnoreCase)))
+            {
+                prefix.Add(candidate);
+                continue;
+            }
+
+            break;
+        }
+
+        return prefix.Count == 0 ? null : string.Join("_", prefix);
+    }
+
+    private static ModuleTextImpact CountModuleImpact(string fileName, string content, IReadOnlyList<string> searchTerms)
+    {
+        var terms = searchTerms
+            .Select(term => new ModuleTermImpact(term, CountOccurrences(content, term)))
+            .Where(term => term.Occurrences > 0)
+            .ToList();
+
+        return new ModuleTextImpact(fileName, terms.Sum(term => term.Occurrences), terms);
+    }
+
+    private static int ImpactPriority(string fileName)
+    {
+        var name = Path.GetFileName(fileName);
+        if (name.Equals("rtu.ccx", StringComparison.OrdinalIgnoreCase))
+        {
+            return 0;
+        }
+
+        if (name.Equals("ddbb.dbx", StringComparison.OrdinalIgnoreCase))
+        {
+            return 1;
+        }
+
+        var extension = Path.GetExtension(name);
+        return extension.Equals(".ccx", StringComparison.OrdinalIgnoreCase) ? 2 :
+            extension.Equals(".dbx", StringComparison.OrdinalIgnoreCase) ? 3 : 4;
+    }
+
+    private static IReadOnlyList<string> ResolveTargetProjects(string targetPath)
+    {
+        if (string.IsNullOrWhiteSpace(targetPath))
+        {
+            throw new InvalidOperationException("Seleziona un file .cprj o una cartella con progetti destinazione.");
+        }
+
+        var normalizedTargetPath = ResolveSourcePath(targetPath);
+        if (File.Exists(normalizedTargetPath))
+        {
+            var extension = Path.GetExtension(normalizedTargetPath);
+            if (!extension.Equals(".cprj", StringComparison.OrdinalIgnoreCase) &&
+                !extension.Equals(".zip", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException("La destinazione deve essere un file .cprj/.zip o una cartella.");
+            }
+
+            return [normalizedTargetPath];
+        }
+
+        var projects = Directory.GetFiles(normalizedTargetPath, "*.cprj", SearchOption.TopDirectoryOnly)
+            .Concat(Directory.GetFiles(normalizedTargetPath, "*.zip", SearchOption.TopDirectoryOnly))
+            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (projects.Count == 0)
+        {
+            throw new InvalidOperationException("La cartella destinazione non contiene file .cprj o .zip.");
+        }
+
+        return projects;
+    }
+
+    private static void CopyDirectoryContents(string sourceDirectory, string destinationDirectory)
+    {
+        foreach (var directory in Directory.GetDirectories(sourceDirectory, "*", SearchOption.AllDirectories))
+        {
+            var relativePath = Path.GetRelativePath(sourceDirectory, directory);
+            Directory.CreateDirectory(Path.Combine(destinationDirectory, relativePath));
+        }
+
+        foreach (var file in Directory.GetFiles(sourceDirectory, "*", SearchOption.AllDirectories))
+        {
+            var relativePath = Path.GetRelativePath(sourceDirectory, file);
+            var destinationPath = Path.Combine(destinationDirectory, relativePath);
+            Directory.CreateDirectory(Path.GetDirectoryName(destinationPath) ?? destinationDirectory);
+            File.Copy(file, destinationPath, true);
+        }
+    }
+
+    private static int CopyModuleDefinitionFiles(
+        string sourceRoot,
+        string targetRoot,
+        IReadOnlyList<string> definitionPaths,
+        IReadOnlyList<TextReplacement> replacements)
+    {
+        var copied = 0;
+        foreach (var relativePath in definitionPaths)
+        {
+            var sourcePath = Path.Combine(sourceRoot, relativePath);
+            if (!File.Exists(sourcePath))
+            {
+                throw new InvalidOperationException($"File modulo mancante nel sorgente: {relativePath}");
+            }
+
+            var destinationRelativePath = BuildDestinationRelativePath(relativePath, replacements);
+            var targetPath = Path.Combine(targetRoot, destinationRelativePath);
+            Directory.CreateDirectory(Path.GetDirectoryName(targetPath) ?? targetRoot);
+            var bytes = File.ReadAllBytes(sourcePath);
+            if (TryDecodeText(bytes, out var content, out var encoding))
+            {
+                var updated = ApplyReplacements(content, replacements);
+                if (Path.GetExtension(targetPath).Equals(".ccx", StringComparison.OrdinalIgnoreCase))
+                {
+                    updated = EnsureNoRestrictionSignature(updated);
+                }
+
+                File.WriteAllText(targetPath, updated, encoding);
+            }
+            else
+            {
+                File.Copy(sourcePath, targetPath, true);
+            }
+
+            copied++;
+        }
+
+        return copied;
+    }
+
+    private static IReadOnlyList<TextReplacement> BuildPingerDefinitionFileReplacements(
+        IReadOnlyList<string> definitionPaths,
+        string targetDeviceName)
+    {
+        var replacements = new List<TextReplacement>();
+        var safeTargetDeviceName = MakeSafeFileName(targetDeviceName);
+        foreach (var relativePath in definitionPaths)
+        {
+            var extension = Path.GetExtension(relativePath);
+            if (!extension.Equals(".ccx", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var fileName = Path.GetFileName(relativePath);
+            var sourceBaseName = Path.GetFileNameWithoutExtension(relativePath);
+            if (string.IsNullOrWhiteSpace(fileName) || string.IsNullOrWhiteSpace(sourceBaseName))
+            {
+                continue;
+            }
+
+            replacements.Add(new TextReplacement(fileName, $"IED_mPinger_{safeTargetDeviceName}.ccx"));
+            replacements.Add(new TextReplacement(sourceBaseName, $"IED_mPinger_{safeTargetDeviceName}"));
+        }
+
+        return replacements;
+    }
+
+    private static IReadOnlyList<string> FindModuleRelatedFiles(string sourceRoot, IReadOnlyList<string> definitionPaths)
+    {
+        var relatedFiles = new List<string>();
+        foreach (var relativePath in definitionPaths)
+        {
+            var sourcePath = Path.Combine(sourceRoot, relativePath);
+            if (!File.Exists(sourcePath) ||
+                !Path.GetExtension(sourcePath).Equals(".ccx", StringComparison.OrdinalIgnoreCase) ||
+                !TryLoadXml(sourcePath, out var document))
+            {
+                continue;
+            }
+
+            foreach (var scanFileName in ReadElementValues(document, "ScanFileName"))
+            {
+                AddRelatedFileIfExists(sourceRoot, relativePath, scanFileName, relatedFiles);
+            }
+        }
+
+        return relatedFiles;
+    }
+
+    private static IReadOnlyList<string> ReadElementValues(XDocument document, string localName)
+    {
+        return document
+            .Descendants()
+            .Where(node => node.Name.LocalName.Equals(localName, StringComparison.OrdinalIgnoreCase))
+            .Select(node => node.Value.Trim())
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static void AddRelatedFileIfExists(string sourceRoot, string ownerRelativePath, string relatedFileName, List<string> relatedFiles)
+    {
+        var candidates = new[]
+        {
+            Path.Combine(sourceRoot, relatedFileName),
+            Path.Combine(sourceRoot, Path.GetDirectoryName(ownerRelativePath) ?? string.Empty, relatedFileName)
+        };
+
+        var existingPath = candidates.FirstOrDefault(File.Exists);
+        if (existingPath is null)
+        {
+            throw new InvalidOperationException($"File collegato al modulo non trovato: {relatedFileName}");
+        }
+
+        relatedFiles.Add(Path.GetRelativePath(sourceRoot, existingPath).Replace('\\', '/'));
+    }
+
+    private static bool DefinitionMatchesModuleType(ModuleDefinition definition, string? moduleType)
+    {
+        if (string.IsNullOrWhiteSpace(moduleType))
+        {
+            return true;
+        }
+
+        return string.Equals(definition.Kind, moduleType, StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(definition.DeviceType, moduleType, StringComparison.OrdinalIgnoreCase) ||
+               IsEquivalentModuleType(definition.DeviceType, moduleType) ||
+               Path.GetFileNameWithoutExtension(definition.FileName).EndsWith("_" + moduleType, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsEquivalentModuleType(string? detectedType, string requestedType)
+    {
+        if (string.IsNullOrWhiteSpace(detectedType))
+        {
+            return false;
+        }
+
+        return requestedType.Equals("m61850", StringComparison.OrdinalIgnoreCase) &&
+               detectedType.Equals("mIEC61850", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static int CopyDirectXmlNodes(
+        string sourceRoot,
+        string targetRoot,
+        string relativePath,
+        IReadOnlyList<string> directTerms,
+        IReadOnlyList<TextReplacement> replacements)
+    {
+        return CopyRelatedXmlNodes(sourceRoot, targetRoot, relativePath, directTerms, replacements);
+    }
+
+    private static int CopyRelatedXmlNodes(
+        string sourceRoot,
+        string targetRoot,
+        string relativePath,
+        IReadOnlyList<string> terms,
+        IReadOnlyList<TextReplacement> replacements)
+    {
+        return CopyRelatedXmlNodes(sourceRoot, targetRoot, relativePath, relativePath, terms, replacements);
+    }
+
+    private static int CopyRelatedXmlNodes(
+        string sourceRoot,
+        string targetRoot,
+        string sourceRelativePath,
+        string targetRelativePath,
+        IReadOnlyList<string> terms,
+        IReadOnlyList<TextReplacement> replacements,
+        Action<XElement, XElement>? adjustCopiedNode = null)
+    {
+        var sourcePath = Path.Combine(sourceRoot, sourceRelativePath);
+        var targetPath = Path.Combine(targetRoot, targetRelativePath);
+        if (!File.Exists(sourcePath) || !File.Exists(targetPath))
+        {
+            return 0;
+        }
+
+        if (!TryLoadXml(sourcePath, out var sourceDocument) || !TryLoadXml(targetPath, out var targetDocument))
+        {
+            return 0;
+        }
+
+        var normalizedTerms = SortSearchTerms(terms);
+        var sourceNodes = sourceDocument
+            .Descendants()
+            .Where(node => ElementReferencesAnyTerm(node, normalizedTerms))
+            .Where(node => !ReferencesPlcAutomationFile(node))
+            .Where(node => !IsProcedureNode(node))
+            .ToList();
+        sourceNodes = ExpandProcedureGroups(sourceNodes, targetDocument);
+
+        foreach (var sourceNode in sourceNodes)
+        {
+            var copiedNode = new XElement(sourceNode);
+            ApplyReplacementsToElement(copiedNode, replacements);
+            adjustCopiedNode?.Invoke(sourceNode, copiedNode);
+            RemoveDuplicateXmlNodes(targetDocument, copiedNode);
+            var targetParent = FindMatchingParent(targetDocument, sourceNode.Parent);
+            EnsureUniqueXmlId(targetParent, copiedNode);
+            targetParent.Add(new XText(Environment.NewLine + DetectNodeIndent(sourceNode)));
+            targetParent.Add(copiedNode);
+        }
+
+        if (sourceNodes.Count > 0)
+        {
+            SaveXmlDocument(targetDocument, targetPath);
+        }
+
+        return sourceNodes.Count;
+    }
+
+    private static int CopyTagNodesAcrossXmlFiles(
+        string sourceRoot,
+        string targetRoot,
+        IReadOnlyList<string> tags,
+        IReadOnlyList<TextReplacement> replacements)
+    {
+        var normalizedTags = SortSearchTerms(tags);
+        if (normalizedTags.Count == 0)
+        {
+            return 0;
+        }
+
+        var copied = 0;
+        foreach (var sourcePath in Directory.GetFiles(sourceRoot, "*.*", SearchOption.AllDirectories)
+                     .Where(path =>
+                         Path.GetExtension(path).Equals(".dbx", StringComparison.OrdinalIgnoreCase) ||
+                         Path.GetExtension(path).Equals(".ccx", StringComparison.OrdinalIgnoreCase)))
+        {
+            var relativePath = Path.GetRelativePath(sourceRoot, sourcePath).Replace('\\', '/');
+            if (!TryLoadXml(sourcePath, out var document) ||
+                !document.Descendants().Any(node => ElementReferencesAnyTerm(node, normalizedTags)))
+            {
+                continue;
+            }
+
+            var targetRelativePath = ApplyReplacements(relativePath, replacements).Replace('\\', '/');
+            copied += CopyRelatedXmlNodes(sourceRoot, targetRoot, relativePath, targetRelativePath, normalizedTags, replacements);
+        }
+
+        return copied;
+    }
+
+    private static int CopyPingerXtNodesAcrossXmlFiles(
+        string sourceRoot,
+        string targetRoot,
+        IReadOnlyList<string> tags,
+        IReadOnlyList<TextReplacement> replacements)
+    {
+        var normalizedTags = SortSearchTerms(tags);
+        if (normalizedTags.Count == 0)
+        {
+            return 0;
+        }
+
+        var t7ByTag = ReadT7ByTagFromDbx(sourceRoot, normalizedTags);
+        var copied = 0;
+        foreach (var sourcePath in Directory.GetFiles(sourceRoot, "*.*", SearchOption.AllDirectories)
+                     .Where(path =>
+                         Path.GetExtension(path).Equals(".dbx", StringComparison.OrdinalIgnoreCase) ||
+                         Path.GetExtension(path).Equals(".ccx", StringComparison.OrdinalIgnoreCase)))
+        {
+            var relativePath = Path.GetRelativePath(sourceRoot, sourcePath).Replace('\\', '/');
+            if (!TryLoadXml(sourcePath, out var document) ||
+                !document.Descendants().Any(node => ElementReferencesAnyTerm(node, normalizedTags)))
+            {
+                continue;
+            }
+
+            var targetRelativePath = ApplyReplacements(relativePath, replacements).Replace('\\', '/');
+            copied += CopyRelatedXmlNodes(
+                sourceRoot,
+                targetRoot,
+                relativePath,
+                targetRelativePath,
+                normalizedTags,
+                replacements,
+                (sourceNode, copiedNode) => RecalculateIoaFromT7(sourceNode, copiedNode, t7ByTag));
+        }
+
+        return copied;
+    }
+
+    private static IReadOnlyDictionary<string, int> ReadT7ByTagFromDbx(string sourceRoot, IReadOnlyList<string> tags)
+    {
+        var tagSet = tags.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var result = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var dbxPath in Directory.GetFiles(sourceRoot, "*.dbx", SearchOption.AllDirectories))
+        {
+            if (!TryLoadXml(dbxPath, out var document))
+            {
+                continue;
+            }
+
+            foreach (var node in document.Descendants())
+            {
+                var tag = node.Attribute("tag")?.Value;
+                var t7 = node.Attribute("T7")?.Value;
+                if (!string.IsNullOrWhiteSpace(tag) &&
+                    tagSet.Contains(tag) &&
+                    int.TryParse(t7, out var parsed) &&
+                    !result.ContainsKey(tag))
+                {
+                    result[tag] = parsed;
+                }
+            }
+        }
+
+        return result;
+    }
+
+    private static void RecalculateIoaFromT7(
+        XElement sourceNode,
+        XElement copiedNode,
+        IReadOnlyDictionary<string, int> t7ByTag)
+    {
+        var ioaAttribute = copiedNode.Attribute("ioa");
+        if (ioaAttribute is null)
+        {
+            return;
+        }
+
+        var sourceTag = sourceNode.Attribute("tag")?.Value;
+        var targetTag = copiedNode.Attribute("tag")?.Value;
+        if (string.IsNullOrWhiteSpace(sourceTag) ||
+            string.IsNullOrWhiteSpace(targetTag) ||
+            !t7ByTag.TryGetValue(sourceTag, out var t7) ||
+            !TryReadMountOffset(targetTag, out var offset))
+        {
+            return;
+        }
+
+        ioaAttribute.Value = (offset + t7).ToString();
+    }
+
+    private static bool TryReadMountOffset(string tag, out int offset)
+    {
+        offset = 0;
+        var match = Regex.Match(tag, "^[^_]+_(?<mount>\\d+M\\d+)_", RegexOptions.IgnoreCase);
+        if (!match.Success)
+        {
+            return false;
+        }
+
+        var digits = new string(match.Groups["mount"].Value.Where(char.IsDigit).ToArray());
+        if (!int.TryParse(digits, out var mountNumber))
+        {
+            return false;
+        }
+
+        offset = mountNumber * 40000;
+        return true;
+    }
+
+    private static bool ElementReferencesAnyTerm(XElement node, IReadOnlyList<string> terms)
+    {
+        if (terms.Count == 0)
+        {
+            return false;
+        }
+
+        foreach (var attribute in node.Attributes())
+        {
+            if (terms.Any(term => XmlValueMatchesTerm(attribute.Value, term)))
+            {
+                return true;
+            }
+        }
+
+        foreach (var text in node.Nodes().OfType<XText>())
+        {
+            if (terms.Any(term => XmlValueMatchesTerm(text.Value, term)))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool IsProcedureNode(XElement node)
+    {
+        return node.Parent is not null &&
+               node.Parent.Name.LocalName.Equals("procedure", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static void EnsureUniqueXmlId(XElement targetParent, XElement copiedNode)
+    {
+        var idAttribute = copiedNode.Attribute("id");
+        if (idAttribute is null || !int.TryParse(idAttribute.Value, out var currentId))
+        {
+            return;
+        }
+
+        var usedIds = targetParent
+            .Elements()
+            .Select(node => node.Attribute("id")?.Value)
+            .Select(value => int.TryParse(value, out var parsed) ? parsed : (int?)null)
+            .Where(value => value.HasValue)
+            .Select(value => value!.Value)
+            .ToHashSet();
+
+        if (!usedIds.Contains(currentId))
+        {
+            return;
+        }
+
+        idAttribute.Value = (usedIds.Count == 0 ? 1 : usedIds.Max() + 1).ToString();
+    }
+
+    private static bool XmlValueMatchesTerm(string value, string term)
+    {
+        if (string.IsNullOrWhiteSpace(value) || string.IsNullOrWhiteSpace(term))
+        {
+            return false;
+        }
+
+        var normalizedValue = value.Trim();
+        var normalizedTerm = term.Trim();
+        if (string.Equals(normalizedValue, normalizedTerm, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return string.Equals(Path.GetFileName(normalizedValue), normalizedTerm, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static void ApplyReplacementsToElement(XElement element, IReadOnlyList<TextReplacement> replacements)
+    {
+        if (replacements.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var attribute in element.Attributes().ToList())
+        {
+            attribute.Value = ApplyReplacements(attribute.Value, replacements);
+        }
+
+        foreach (var text in element.Nodes().OfType<XText>().ToList())
+        {
+            text.Value = ApplyReplacements(text.Value, replacements);
+        }
+
+        foreach (var child in element.Elements())
+        {
+            ApplyReplacementsToElement(child, replacements);
+        }
+    }
+
+    private static IReadOnlyList<TextReplacement> NormalizeTextReplacements(IReadOnlyList<TextReplacement> replacements)
+    {
+        return replacements
+            .Where(replacement => !string.IsNullOrWhiteSpace(replacement.Find))
+            .Select(replacement => new TextReplacement(replacement.Find.Trim(), replacement.Replace ?? string.Empty))
+            .Where(replacement => !replacement.Find.Equals(replacement.Replace, StringComparison.OrdinalIgnoreCase))
+            .GroupBy(replacement => replacement.Find, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
+            .OrderByDescending(replacement => replacement.Find.Length)
+            .ThenBy(replacement => replacement.Find, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static bool ReferencesPlcAutomationFile(XElement node)
+    {
+        return node.Attributes().Any(attribute => IsPlcAutomationFile(attribute.Value));
+    }
+
+    private static bool IsPlcAutomationFile(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        var fileName = Path.GetFileName(value.Trim());
+        return fileName.StartsWith("AUT_aPLC_", StringComparison.OrdinalIgnoreCase) &&
+               fileName.EndsWith(".ccx", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static List<XElement> ExpandProcedureGroups(IReadOnlyList<XElement> sourceNodes, XDocument targetDocument)
+    {
+        var expanded = new List<XElement>();
+        var seen = new HashSet<XElement>();
+
+        foreach (var sourceNode in sourceNodes)
+        {
+            var procedureParent = sourceNode.Parent;
+            var procedureId = sourceNode.Attribute("id")?.Value;
+            if (procedureParent is not null &&
+                procedureParent.Name.LocalName.Equals("procedure", StringComparison.OrdinalIgnoreCase) &&
+                !string.IsNullOrWhiteSpace(procedureId))
+            {
+                if (TargetProcedureIdExists(targetDocument, procedureId))
+                {
+                    AddIfNew(expanded, seen, sourceNode);
+                    continue;
+                }
+
+                foreach (var sibling in procedureParent.Elements()
+                             .Where(node => string.Equals(node.Attribute("id")?.Value, procedureId, StringComparison.OrdinalIgnoreCase)))
+                {
+                    AddIfNew(expanded, seen, sibling);
+                }
+
+                continue;
+            }
+
+            AddIfNew(expanded, seen, sourceNode);
+        }
+
+        return expanded;
+    }
+
+    private static bool TargetProcedureIdExists(XDocument targetDocument, string procedureId)
+    {
+        return targetDocument
+            .Descendants()
+            .Where(node => node.Parent is not null && node.Parent.Name.LocalName.Equals("procedure", StringComparison.OrdinalIgnoreCase))
+            .Any(node => string.Equals(node.Attribute("id")?.Value, procedureId, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static void AddIfNew(List<XElement> nodes, ISet<XElement> seen, XElement node)
+    {
+        if (seen.Add(node))
+        {
+            nodes.Add(node);
+        }
+    }
+
+    private static void RemoveDuplicateXmlNodes(XDocument targetDocument, XElement sourceNode)
+    {
+        var keys = new[]
+        {
+            sourceNode.Attribute("href")?.Value,
+            sourceNode.Attribute("ccx_label")?.Value,
+            sourceNode.Attribute("label")?.Value,
+            sourceNode.Attribute("name")?.Value,
+            sourceNode.Attribute("errorTag")?.Value,
+            sourceNode.Attribute("tag")?.Value,
+            sourceNode.Attribute("input")?.Value,
+            sourceNode.Attribute("out")?.Value
+        }.Where(value => !string.IsNullOrWhiteSpace(value)).Cast<string>().ToList();
+
+        if (keys.Count == 0)
+        {
+            var compactSource = sourceNode.ToString(SaveOptions.DisableFormatting);
+            targetDocument.Descendants()
+                .Where(node => node.Name.LocalName.Equals(sourceNode.Name.LocalName, StringComparison.OrdinalIgnoreCase) &&
+                               string.Equals(node.ToString(SaveOptions.DisableFormatting), compactSource, StringComparison.Ordinal))
+                .ToList()
+                .ForEach(node => node.Remove());
+            return;
+        }
+
+        targetDocument.Descendants()
+            .Where(node => node.Name.LocalName.Equals(sourceNode.Name.LocalName, StringComparison.OrdinalIgnoreCase))
+            .Where(node => keys.Any(key =>
+                string.Equals(node.Attribute("href")?.Value, key, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(node.Attribute("ccx_label")?.Value, key, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(node.Attribute("label")?.Value, key, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(node.Attribute("name")?.Value, key, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(node.Attribute("errorTag")?.Value, key, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(node.Attribute("tag")?.Value, key, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(node.Attribute("input")?.Value, key, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(node.Attribute("out")?.Value, key, StringComparison.OrdinalIgnoreCase)))
+            .ToList()
+            .ForEach(node => node.Remove());
+    }
+
+    private static XElement FindMatchingParent(XDocument targetDocument, XElement? sourceParent)
+    {
+        if (sourceParent is null)
+        {
+            return targetDocument.Root ?? throw new InvalidOperationException("XML destinazione senza root.");
+        }
+
+        var targetRoot = targetDocument.Root ?? throw new InvalidOperationException("XML destinazione senza root.");
+        var path = sourceParent
+            .AncestorsAndSelf()
+            .Reverse()
+            .Select(node => node.Name.LocalName)
+            .ToList();
+
+        var current = targetRoot;
+        foreach (var localName in path.Skip(1))
+        {
+            current = current.Elements().FirstOrDefault(node => node.Name.LocalName.Equals(localName, StringComparison.OrdinalIgnoreCase))
+                ?? current;
+        }
+
+        return current;
+    }
+
+    private static string DetectNodeIndent(XElement node)
+    {
+        if (node.PreviousNode is XText text)
+        {
+            var value = text.Value;
+            var index = value.LastIndexOf('\n');
+            return index >= 0 ? value[(index + 1)..] : value;
+        }
+
+        return "    ";
+    }
+
+    private static bool TryLoadXml(string path, out XDocument document)
+    {
+        try
+        {
+            document = XDocument.Load(path, LoadOptions.PreserveWhitespace);
+            return true;
+        }
+        catch
+        {
+            document = new XDocument();
+            return false;
+        }
+    }
+
+    private static void SaveXmlDocument(XDocument document, string path)
+    {
+        var content = document.ToString(SaveOptions.DisableFormatting);
+        if (Path.GetExtension(path).Equals(".ccx", StringComparison.OrdinalIgnoreCase))
+        {
+            content = EnsureNoRestrictionSignature(content);
+        }
+
+        File.WriteAllText(path, content, StrictUtf8Encoding);
+    }
+
+    private static void EnsureNoRestrictionSignatureInCcxFiles(string rootPath)
+    {
+        foreach (var file in Directory.GetFiles(rootPath, "*.ccx", SearchOption.AllDirectories))
+        {
+            var bytes = File.ReadAllBytes(file);
+            if (!TryDecodeText(bytes, out var content, out var encoding))
+            {
+                continue;
+            }
+
+            var updated = EnsureNoRestrictionSignature(content);
+            if (!string.Equals(content, updated, StringComparison.Ordinal))
+            {
+                File.WriteAllText(file, updated, encoding);
+            }
+        }
+    }
+
+    private static bool TryParseXml(string content, out XDocument document)
+    {
+        try
+        {
+            document = XDocument.Parse(content, LoadOptions.PreserveWhitespace);
+            return true;
+        }
+        catch
+        {
+            document = new XDocument();
+            return false;
+        }
+    }
+
+    private static bool ContainsOrdinalIgnoreCase(string content, string value) =>
+        content.IndexOf(value, StringComparison.OrdinalIgnoreCase) >= 0;
+
+    private static IReadOnlyList<DeviceProject> LoadDeviceProjects(string csvPath, Action<string>? log = null)
+    {
+        var rows = LoadTabularRows(csvPath, "file dispositivi");
+        if (rows.Count == 0)
+        {
+            return [];
+        }
+
+        var firstRow = rows[0];
+        var hasHeader = IsDeviceCsvHeader(firstRow);
+        var entries = new List<DeviceCsvEntry>();
+
+        if (hasHeader)
+        {
+            var headerMap = BuildHeaderMap(firstRow);
+            foreach (var (row, index) in rows.Skip(1).Select((row, index) => (row, index)))
+            {
+                if (row.Count > 0)
+                {
+                    AddDeviceEntryIfSupported(entries, ParseNamedDeviceEntry(row, headerMap), row, index + 2, log);
+                }
+            }
+        }
+        else
+        {
+            foreach (var (row, index) in rows.Select((row, index) => (row, index)))
+            {
+                if (row.Count > 0)
+                {
+                    AddDeviceEntryIfSupported(entries, ParsePositionalDeviceEntry(row), row, index + 1, log);
+                }
+            }
+        }
+
+        return entries
+            .GroupBy(entry => entry.Montante, StringComparer.OrdinalIgnoreCase)
+            .Select(group => new DeviceProject(
+                group.First().Montante,
+                group.ToDictionary(entry => entry.DeviceType, entry => entry.Ip, StringComparer.OrdinalIgnoreCase),
+                group
+                    .Where(entry => !string.IsNullOrWhiteSpace(entry.Label))
+                    .ToDictionary(entry => entry.DeviceType, entry => entry.Label!, StringComparer.OrdinalIgnoreCase)))
+            .OrderBy(project => project.Montante, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static IReadOnlyList<DeviceProject> LoadPingerProjects(string csvPath)
+    {
+        var rows = LoadTabularRows(csvPath, "CSV PINGER");
+        if (rows.Count == 0)
+        {
+            return [];
+        }
+
+        var firstRow = rows[0];
+        var hasHeader = IsDeviceCsvHeader(firstRow);
+        var entries = new List<DeviceCsvEntry>();
+
+        if (hasHeader)
+        {
+            var headerMap = BuildHeaderMap(firstRow);
+            foreach (var row in rows.Skip(1))
+            {
+                if (row.Count > 0)
+                {
+                    entries.Add(ParseNamedPingerEntry(row, headerMap));
+                }
+            }
+        }
+        else
+        {
+            foreach (var row in rows)
+            {
+                if (row.Count > 0)
+                {
+                    entries.Add(ParsePositionalPingerEntry(row));
+                }
+            }
+        }
+
+        return entries
+            .GroupBy(entry => entry.Montante, StringComparer.OrdinalIgnoreCase)
+            .Select(group => new DeviceProject(
+                group.First().Montante,
+                group.ToDictionary(entry => entry.DeviceType, entry => entry.Ip, StringComparer.OrdinalIgnoreCase),
+                new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)))
+            .OrderBy(project => project.Montante, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static GenericCsvData LoadGenericCsv(string csvPath)
+    {
+        var splitRows = LoadTabularRows(csvPath, "file generico");
+        if (splitRows.Count == 0)
+        {
+            throw new InvalidOperationException("Il file generico deve avere almeno una riga dati.");
+        }
+
+        var columnCount = splitRows.Max(row => row.Count);
+        var columns = Enumerable.Range(1, columnCount)
+            .Select(index => $"C{index}")
+            .ToList();
+        var columnPreviews = columns
+            .Select((_, index) => index < splitRows[0].Count ? splitRows[0][index] : string.Empty)
+            .ToList();
+
+        var rows = new List<IReadOnlyDictionary<string, string>>();
+        var rowPreviews = new List<IReadOnlyList<string>>();
+        foreach (var values in splitRows)
+        {
+            var row = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var rowPreview = new List<string>();
+            for (var i = 0; i < columns.Count; i++)
+            {
+                var value = i < values.Count ? values[i] : string.Empty;
+                row[columns[i]] = value;
+                rowPreview.Add(value);
+            }
+
+            rows.Add(row);
+            rowPreviews.Add(rowPreview);
+        }
+
+        return new GenericCsvData(csvPath, columns, columnPreviews, rowPreviews, rows);
+    }
+
+    private static IReadOnlyList<GenericCsvMapping> NormalizeGenericCsvMappings(IReadOnlyList<GenericCsvMapping> mappings)
+    {
+        var normalized = mappings
+            .Select(mapping => new GenericCsvMapping(
+                NormalizeOptionalValue(mapping.CsvColumn) ?? string.Empty,
+                NormalizeOptionalValue(mapping.Find) ?? string.Empty,
+                mapping.UseAsOutputName))
+            .Where(mapping =>
+                !string.IsNullOrWhiteSpace(mapping.CsvColumn) ||
+                !string.IsNullOrWhiteSpace(mapping.Find) ||
+                mapping.UseAsOutputName)
+            .ToList();
+
+        if (normalized.Count == 0)
+        {
+            throw new InvalidOperationException("Aggiungi almeno un mapping CSV.");
+        }
+
+        foreach (var mapping in normalized)
+        {
+            if (string.IsNullOrWhiteSpace(mapping.CsvColumn))
+            {
+                throw new InvalidOperationException("Ogni mapping CSV deve avere la colonna CSV.");
+            }
+
+            if (string.IsNullOrWhiteSpace(mapping.Find) && !mapping.UseAsOutputName)
+            {
+                throw new InvalidOperationException("Una riga senza testo template deve essere spuntata come Nome file.");
+            }
+        }
+
+        if (normalized.Count(mapping => mapping.UseAsOutputName) > 1)
+        {
+            throw new InvalidOperationException("Seleziona una sola riga come nome file.");
+        }
+
+        return normalized;
+    }
+
+    private static string ResolveGenericCsvColumn(GenericCsvData csv, string requestedColumn, string fieldName)
+    {
+        if (int.TryParse(requestedColumn.Trim(), out var columnNumber))
+        {
+            if (columnNumber < 1 || columnNumber > csv.Columns.Count)
+            {
+                throw new InvalidOperationException($"Nel CSV non esiste la {fieldName} numero {columnNumber}.");
+            }
+
+            return csv.Columns[columnNumber - 1];
+        }
+
+        var normalizedRequested = NormalizeHeader(requestedColumn);
+        if (string.IsNullOrWhiteSpace(normalizedRequested))
+        {
+            throw new InvalidOperationException($"Specifica la {fieldName}.");
+        }
+
+        var column = csv.Columns.FirstOrDefault(candidate =>
+            NormalizeHeader(candidate).Equals(normalizedRequested, StringComparison.OrdinalIgnoreCase));
+        if (column is null)
+        {
+            throw new InvalidOperationException($"Nel CSV non esiste la {fieldName}: {requestedColumn}");
+        }
+
+        return column;
+    }
+
+    private static string ResolveGenericCsvOutputName(string value, int rowNumber)
+    {
+        var safeName = MakeSafeFileName(value);
+        return string.IsNullOrWhiteSpace(safeName) ? $"riga_{rowNumber}" : safeName;
+    }
+
+    private static bool IsDeviceCsvHeader(IReadOnlyList<string> row)
+    {
+        var knownHeaders = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "montante", "name", "targetname", "dispositivo", "device", "tipo", "ip", "targetip", "label", "bculabel", "labelbcu"
+        };
+
+        return row.Select(NormalizeHeader).Any(knownHeaders.Contains);
+    }
+
+    private static DeviceCsvEntry? ParseNamedDeviceEntry(IReadOnlyList<string> row, IReadOnlyDictionary<string, int> headerMap)
+    {
+        string? ReadColumn(params string[] names)
+        {
+            foreach (var name in names)
+            {
+                if (headerMap.TryGetValue(name, out var index) && index < row.Count)
+                {
+                    return NormalizeOptionalValue(row[index]);
+                }
+            }
+
+            return null;
+        }
+
+        return CreateDeviceEntry(
+            ReadColumn("montante", "name", "targetname"),
+            ReadColumn("dispositivo", "device", "tipo"),
+            ReadColumn("ip", "targetip"),
+            ReadColumn("label", "bculabel", "labelbcu"));
+    }
+
+    private static DeviceCsvEntry? ParsePositionalDeviceEntry(IReadOnlyList<string> row)
+    {
+        if (row.Count < 3)
+        {
+            throw new InvalidOperationException("Il CSV dispositivi richiede almeno 3 colonne: Montante;Dispositivo;IP");
+        }
+
+        return CreateDeviceEntry(row[0], row[1], row[2], row.Count >= 4 ? row[3] : null);
+    }
+
+    private static DeviceCsvEntry ParseNamedPingerEntry(IReadOnlyList<string> row, IReadOnlyDictionary<string, int> headerMap)
+    {
+        string? ReadColumn(params string[] names)
+        {
+            foreach (var name in names)
+            {
+                if (headerMap.TryGetValue(name, out var index) && index < row.Count)
+                {
+                    return NormalizeOptionalValue(row[index]);
+                }
+            }
+
+            return null;
+        }
+
+        return CreatePingerEntry(
+            ReadColumn("montante", "name", "targetname"),
+            ReadColumn("dispositivo", "device", "tipo"),
+            ReadColumn("ip", "targetip"));
+    }
+
+    private static DeviceCsvEntry ParsePositionalPingerEntry(IReadOnlyList<string> row)
+    {
+        if (row.Count < 3)
+        {
+            throw new InvalidOperationException("Il CSV PINGER richiede almeno 3 colonne: Montante;Dispositivo;IP");
+        }
+
+        return CreatePingerEntry(row[0], row[1], row[2]);
+    }
+
+    private static void AddDeviceEntryIfSupported(
+        ICollection<DeviceCsvEntry> entries,
+        DeviceCsvEntry? entry,
+        IReadOnlyList<string> row,
+        int rowNumber,
+        Action<string>? log)
+    {
+        if (entry is not null)
+        {
+            entries.Add(entry);
+            return;
+        }
+
+        log?.Invoke($"AVVISO riga {rowNumber}: dispositivo non gestito, riga ignorata ({string.Join(";", row)}).");
+    }
+
+    private static DeviceCsvEntry? CreateDeviceEntry(string? montante, string? device, string? ip, string? label)
+    {
+        if (string.IsNullOrWhiteSpace(montante))
+        {
+            throw new InvalidOperationException("Nel CSV dispositivi manca il montante.");
+        }
+
+        var normalizedDevice = NormalizeDeviceType(device);
+        if (normalizedDevice is null)
+        {
+            return null;
+        }
+
+        if (string.IsNullOrWhiteSpace(ip))
+        {
+            throw new InvalidOperationException($"Nel CSV dispositivi manca l'IP per '{montante}'.");
+        }
+
+        var normalizedLabel = normalizedDevice == "AS1" ? NormalizeOptionalValue(label) : null;
+        return new DeviceCsvEntry(montante.Trim(), normalizedDevice, ip.Trim(), normalizedLabel);
+    }
+
+    private static DeviceCsvEntry CreatePingerEntry(string? montante, string? device, string? ip)
+    {
+        if (string.IsNullOrWhiteSpace(montante))
+        {
+            throw new InvalidOperationException("Nel CSV PINGER manca il montante.");
+        }
+
+        if (string.IsNullOrWhiteSpace(device))
+        {
+            throw new InvalidOperationException($"Nel CSV PINGER manca il dispositivo per '{montante}'.");
+        }
+
+        if (string.IsNullOrWhiteSpace(ip))
+        {
+            throw new InvalidOperationException($"Nel CSV PINGER manca l'IP per '{montante}'.");
+        }
+
+        var normalizedDevice = device.Trim();
+        if (normalizedDevice.Any(char.IsWhiteSpace))
+        {
+            throw new InvalidOperationException($"Dispositivo PINGER non valido per '{montante}': '{device}'.");
+        }
+
+        return new DeviceCsvEntry(montante.Trim(), normalizedDevice, ip.Trim(), null);
+    }
+
+    private static string? ReadTemplateBcuLabel(string templateRootPath)
+    {
+        var statesPath = Path.Combine(templateRootPath, "states.ccx");
+        if (!File.Exists(statesPath))
+        {
+            return null;
+        }
+
+        try
+        {
+            var document = XDocument.Load(statesPath, LoadOptions.PreserveWhitespace);
+            return document
+                .Descendants()
+                .FirstOrDefault(node =>
+                    node.Name.LocalName.Equals("InputState", StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(node.Attribute("state")?.Value, "LABEL_BCU", StringComparison.OrdinalIgnoreCase))
+                ?.Attribute("text")
+                ?.Value
+                ?.Trim();
+        }
+        catch
+        {
+            var content = File.ReadAllText(statesPath, Encoding.Default);
+            var match = Regex.Match(
+                content,
+                "<InputState\\b(?=[^>]*\\bstate\\s*=\\s*\"LABEL_BCU\")[^>]*\\btext\\s*=\\s*\"(?<text>[^\"]*)\"",
+                RegexOptions.IgnoreCase);
+            return match.Success ? match.Groups["text"].Value.Trim() : null;
+        }
+    }
+
+    private static string? DetectTemplateDeviceType(string label)
+    {
+        foreach (var token in ExtractProjectDeviceTypes(label))
+        {
+            return token;
+        }
+
+        return null;
+    }
+
+    private static string? DetectClientTypeFromLabel(string? label)
+    {
+        if (string.IsNullOrWhiteSpace(label))
+        {
+            return null;
+        }
+
+        return ExtractProjectDeviceTypes(label).LastOrDefault()
+            ?? DetectProjectDeviceTypeBySuffix(label);
+    }
+
+    private static IEnumerable<string> ExtractProjectDeviceTypes(string value)
+    {
+        return value
+            .Split(['_', '-', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(NormalizeDeviceType)
+            .Where(IsProjectDeviceType)
+            .Cast<string>();
+    }
+
+    private static bool IsProjectDeviceType(string? deviceType)
+    {
+        return deviceType is "OP" or "AS1" or "EV";
+    }
+
+    private static IEnumerable<TemplateClientLink> DiscoverIedClients(string templateRootPath)
+    {
+        foreach (var clientPath in Directory.EnumerateFiles(templateRootPath, "IED*.ccx", SearchOption.TopDirectoryOnly))
+        {
+            var clientDocument = XDocument.Load(clientPath, LoadOptions.PreserveWhitespace);
+            var clientLabel = ReadElementValue(clientDocument, "general", "label")
+                ?? ReadElementValue(clientDocument, "CCX_device", "name")
+                ?? Path.GetFileNameWithoutExtension(clientPath);
+            var deviceType = DetectClientTypeFromLabel(clientLabel);
+            if (deviceType is null)
+            {
+                continue;
+            }
+
+            var clientIp = clientDocument
+                .Descendants()
+                .FirstOrDefault(node => node.Name.LocalName.Equals("IP_addr", StringComparison.OrdinalIgnoreCase))
+                ?.Value
+                ?.Trim();
+
+            if (string.IsNullOrWhiteSpace(clientIp))
+            {
+                throw new InvalidOperationException($"Nel file '{Path.GetFileName(clientPath)}' manca il nodo <IP_addr>.");
+            }
+
+            yield return new TemplateClientLink(deviceType, Path.GetFileName(clientPath), clientIp);
+        }
+    }
+
+    private static string? DetectProjectDeviceTypeBySuffix(string value)
+    {
+        var normalized = new string(value.Trim().Where(char.IsLetterOrDigit).ToArray()).ToUpperInvariant();
+        foreach (var suffix in DeviceAliases.Keys.OrderByDescending(key => key.Length))
+        {
+            if (normalized.EndsWith(suffix, StringComparison.OrdinalIgnoreCase) &&
+                DeviceAliases.TryGetValue(suffix, out var deviceType) &&
+                IsProjectDeviceType(deviceType))
+            {
+                return deviceType;
+            }
+        }
+
+        return null;
+    }
+
+    private static string? DetectServerIp(XDocument rtuDocument)
+    {
+        var main = rtuDocument
+            .Descendants()
+            .FirstOrDefault(node =>
+                node.Name.LocalName.Equals("cnx", StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(node.Attribute("main")?.Value, "true", StringComparison.OrdinalIgnoreCase));
+
+        var fallback = rtuDocument
+            .Descendants()
+            .FirstOrDefault(node =>
+                node.Name.LocalName.Equals("cnx", StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(node.Attribute("name")?.Value, "eth1", StringComparison.OrdinalIgnoreCase));
+
+        return (main ?? fallback)?.Attribute("IP_addr")?.Value;
+    }
+
+    private static string? ReadElementValue(XDocument document, string parentName, string childName)
+    {
+        return document
+            .Descendants()
+            .FirstOrDefault(node => node.Name.LocalName.Equals(parentName, StringComparison.OrdinalIgnoreCase))
+            ?.Elements()
+            .FirstOrDefault(node => node.Name.LocalName.Equals(childName, StringComparison.OrdinalIgnoreCase))
+            ?.Value
+            ?.Trim();
+    }
+
+    private static string? NormalizeDeviceType(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var normalized = new string(value.Trim().Where(char.IsLetterOrDigit).ToArray()).ToUpperInvariant();
+        return DeviceAliases.TryGetValue(normalized, out var alias) ? alias : null;
+    }
+
+    private static string NormalizePingerModuleName(string templateName)
+    {
+        var normalized = templateName.Trim();
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            throw new InvalidOperationException("Inserisci il modulo template PINGER.");
+        }
+
+        if (!normalized.EndsWith("_PING", StringComparison.OrdinalIgnoreCase))
+        {
+            normalized += "_PING";
+        }
+
+        return normalized;
+    }
+
+    private static string GetMountName(string deviceName)
+    {
+        var index = deviceName.IndexOf('_');
+        return index > 0 ? deviceName[..index] : deviceName;
+    }
+
+    private static string GetDeviceSuffix(string deviceName)
+    {
+        var index = deviceName.IndexOf('_');
+        return index >= 0 && index < deviceName.Length - 1 ? deviceName[(index + 1)..] : deviceName;
+    }
+
+    private static IReadOnlyList<LegacyBatchRequest> LoadLegacyBatchRequests(
+        string csvPath,
+        string defaultTemplateName,
+        string defaultTemplateIp,
+        string? defaultTemplateCode,
+        string? defaultTargetCode)
+    {
+        var rows = LoadTabularRows(csvPath, "file batch");
+        if (rows.Count == 0)
+        {
+            return [];
+        }
+
+        var firstRow = rows[0];
+        var hasHeader = IsLegacyCsvHeader(firstRow);
+        var result = new List<LegacyBatchRequest>();
+
+        if (hasHeader)
+        {
+            var headerMap = BuildHeaderMap(firstRow);
+            foreach (var row in rows.Skip(1))
+            {
+                if (row.Count > 0)
+                {
+                    result.Add(ParseNamedLegacyRequest(row, headerMap, defaultTemplateName, defaultTemplateIp, defaultTemplateCode, defaultTargetCode));
+                }
+            }
+        }
+        else
+        {
+            foreach (var row in rows)
+            {
+                if (row.Count > 0)
+                {
+                    result.Add(ParsePositionalLegacyRequest(row, defaultTemplateName, defaultTemplateIp, defaultTemplateCode, defaultTargetCode));
+                }
+            }
+        }
+
+        return result;
+    }
+
+    private static IReadOnlyList<IReadOnlyList<string>> LoadTabularRows(string filePath, string description)
+    {
+        if (!File.Exists(filePath))
+        {
+            throw new InvalidOperationException($"{description} non trovato: {filePath}");
+        }
+
+        var extension = Path.GetExtension(filePath).ToLowerInvariant();
+        IReadOnlyList<IReadOnlyList<string>> rows = extension switch
+        {
+            ".csv" or ".txt" => LoadDelimitedRows(filePath),
+            ".xlsx" or ".xlsm" or ".xls" => LoadExcelRows(filePath),
+            _ => throw new InvalidOperationException($"Formato non supportato per {description}: {extension}. Usa CSV, XLSX, XLSM o XLS.")
+        };
+
+        return rows
+            .Select(row => row.Select(value => value.Trim()).ToList())
+            .Where(row => row.Any(value => !string.IsNullOrWhiteSpace(value)))
+            .Where(row => row.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.StartsWith('#') != true)
+            .Cast<IReadOnlyList<string>>()
+            .ToList();
+    }
+
+    private static IReadOnlyList<IReadOnlyList<string>> LoadDelimitedRows(string csvPath)
+    {
+        var rawLines = File.ReadAllLines(csvPath, Encoding.UTF8)
+            .Select(line => line.Trim())
+            .Where(line => !string.IsNullOrWhiteSpace(line))
+            .ToList();
+
+        if (rawLines.Count == 0)
+        {
+            return [];
+        }
+
+        var delimiter = rawLines[0].Contains(';') ? ';' : ',';
+        return rawLines
+            .Select(line => (IReadOnlyList<string>)SplitRow(line, delimiter))
+            .Where(row => row.Count > 0)
+            .ToList();
+    }
+
+    private static IReadOnlyList<IReadOnlyList<string>> LoadExcelRows(string excelPath)
+    {
+        Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+
+        using var stream = File.Open(excelPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        using var reader = ExcelReaderFactory.CreateReader(stream);
+        var sheets = new List<List<IReadOnlyList<string>>>();
+
+        do
+        {
+            var rows = new List<IReadOnlyList<string>>();
+            while (reader.Read())
+            {
+                var values = new List<string>();
+                for (var i = 0; i < reader.FieldCount; i++)
+                {
+                    values.Add(ConvertExcelValue(reader.GetValue(i)));
+                }
+
+                while (values.Count > 0 && string.IsNullOrWhiteSpace(values[^1]))
+                {
+                    values.RemoveAt(values.Count - 1);
+                }
+
+                if (values.Count > 0)
+                {
+                    rows.Add(values);
+                }
+            }
+
+            if (rows.Count > 0)
+            {
+                sheets.Add(rows);
+            }
+        }
+        while (reader.NextResult());
+
+        if (sheets.Count == 0)
+        {
+            return [];
+        }
+
+        return sheets
+            .OrderByDescending(sheet => sheet.Count)
+            .First();
+    }
+
+    private static string ConvertExcelValue(object? value)
+    {
+        return value switch
+        {
+            null => string.Empty,
+            DateTime date => date.ToString("yyyy-MM-dd HH:mm:ss"),
+            bool boolean => boolean ? "true" : "false",
+            double number when Math.Abs(number % 1) < 0.0000000001 => ((long)number).ToString(System.Globalization.CultureInfo.InvariantCulture),
+            double number => number.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            float number => number.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            decimal number => number.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            _ => value.ToString() ?? string.Empty
+        };
+    }
+
+    private static bool IsLegacyCsvHeader(IReadOnlyList<string> row)
+    {
+        var knownHeaders = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "templatename", "template", "source", "from",
+            "templateip", "sourceip", "fromip",
+            "templatecode", "sourcecode", "fromcode", "inputcode", "codein", "quadriletteraletemplate",
+            "targetname", "target", "name", "montante",
+            "targetip", "ip", "targetcode", "tocode", "outputcode", "codeout", "quadriletteraleoutput",
+            "find", "extrafind", "search", "trova", "replace", "extrareplace", "replacement", "sostituzione",
+            "output", "outputname", "file", "filename"
+        };
+
+        return row.Select(NormalizeHeader).Any(knownHeaders.Contains);
+    }
+
+    private static LegacyBatchRequest ParseNamedLegacyRequest(
+        IReadOnlyList<string> row,
+        IReadOnlyDictionary<string, int> headerMap,
+        string defaultTemplateName,
+        string defaultTemplateIp,
+        string? defaultTemplateCode,
+        string? defaultTargetCode)
+    {
+        string? ReadColumn(params string[] names)
+        {
+            foreach (var name in names)
+            {
+                if (headerMap.TryGetValue(name, out var index) && index < row.Count)
+                {
+                    return NormalizeOptionalValue(row[index]);
+                }
+            }
+
+            return null;
+        }
+
+        return CreateLegacyRequest(
+            ReadColumn("templatename", "template", "source", "from") ?? defaultTemplateName,
+            ReadColumn("templateip", "sourceip", "fromip") ?? defaultTemplateIp,
+            ReadColumn("targetname", "target", "name", "montante"),
+            ReadColumn("targetip", "ip"),
+            ReadColumn("output", "outputname", "file", "filename"),
+            ReadColumn("find", "extrafind", "search", "trova"),
+            ReadColumn("replace", "extrareplace", "replacement", "sostituzione"),
+            ReadColumn("templatecode", "sourcecode", "fromcode", "inputcode", "codein", "quadriletteraletemplate") ?? defaultTemplateCode,
+            ReadColumn("targetcode", "tocode", "outputcode", "codeout", "quadriletteraleoutput") ?? defaultTargetCode);
+    }
+
+    private static LegacyBatchRequest ParsePositionalLegacyRequest(
+        IReadOnlyList<string> row,
+        string defaultTemplateName,
+        string defaultTemplateIp,
+        string? defaultTemplateCode,
+        string? defaultTargetCode)
+    {
+        return row.Count switch
+        {
+            2 => CreateLegacyRequest(defaultTemplateName, defaultTemplateIp, row[0], row[1], row[0], null, null, defaultTemplateCode, defaultTargetCode),
+            3 => CreateLegacyRequest(defaultTemplateName, defaultTemplateIp, row[0], row[1], row[2], null, null, defaultTemplateCode, defaultTargetCode),
+            _ => throw new InvalidOperationException("Formato CSV legacy non supportato in questa versione.")
+        };
+    }
+
+    private static LegacyBatchRequest CreateLegacyRequest(
+        string? templateName,
+        string? templateIp,
+        string? targetName,
+        string? targetIp,
+        string? outputName,
+        string? extraFind,
+        string? extraReplace,
+        string? templateCode,
+        string? targetCode)
+    {
+        if (string.IsNullOrWhiteSpace(templateName) || string.IsNullOrWhiteSpace(templateIp))
+        {
+            throw new InvalidOperationException("Nel CSV legacy mancano i dati del template.");
+        }
+
+        if (string.IsNullOrWhiteSpace(targetName) || string.IsNullOrWhiteSpace(targetIp))
+        {
+            throw new InvalidOperationException("Nel CSV legacy mancano montante o IP target.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(extraFind) && string.IsNullOrWhiteSpace(extraReplace))
+        {
+            throw new InvalidOperationException($"Manca il replace extra per '{targetName}'.");
+        }
+
+        var additional = new List<TextReplacement> { new(templateIp.Trim(), targetIp.Trim()) };
+        if (!string.IsNullOrWhiteSpace(templateCode) && !string.IsNullOrWhiteSpace(targetCode))
+        {
+            additional.Add(new TextReplacement(templateCode.Trim(), targetCode.Trim()));
+        }
+
+        return new LegacyBatchRequest(
+            targetName.Trim(),
+            string.IsNullOrWhiteSpace(outputName) ? targetName.Trim() : outputName.Trim(),
+            NormalizeOptionalValue(extraFind),
+            NormalizeOptionalValue(extraReplace),
+            additional);
+    }
+
+    private static IReadOnlyList<GenericReplaceJob> NormalizeGenericJobs(IReadOnlyList<GenericReplaceJob> jobs)
+    {
+        var normalized = jobs
+            .Where(job => !string.IsNullOrWhiteSpace(job.ReplaceValue))
+            .Select(job => job with
+            {
+                ReplaceValue = job.ReplaceValue.Trim(),
+                OutputName = NormalizeOptionalValue(job.OutputName),
+                ExtraFind = NormalizeOptionalValue(job.ExtraFind),
+                ExtraReplace = NormalizeOptionalValue(job.ExtraReplace)
+            })
+            .ToList();
+
+        if (normalized.Count == 0)
+        {
+            throw new InvalidOperationException("Aggiungi almeno una riga di replace.");
+        }
+
+        foreach (var job in normalized)
+        {
+            if (!string.IsNullOrWhiteSpace(job.ExtraFind) && string.IsNullOrWhiteSpace(job.ExtraReplace))
+            {
+                throw new InvalidOperationException($"Manca il replace extra per '{job.OutputName}'.");
+            }
+        }
+
+        return normalized;
+    }
+
+    private static string ApplyReplacements(string content, IReadOnlyList<TextReplacement> replacements)
+    {
+        return ApplyReplacements(content, replacements, out _);
+    }
+
+    private static string ApplyReplacements(string content, IReadOnlyList<TextReplacement> replacements, out int replacementCount)
+    {
+        var updated = content;
+        replacementCount = 0;
+        foreach (var replacement in replacements)
+        {
+            if (!string.IsNullOrWhiteSpace(replacement.Find))
+            {
+                replacementCount += CountOccurrences(updated, replacement.Find);
+                updated = updated.Replace(replacement.Find, replacement.Replace, StringComparison.OrdinalIgnoreCase);
+            }
+        }
+
+        return updated;
+    }
+
+    private static int CountOccurrences(string content, string find)
+    {
+        var count = 0;
+        var startIndex = 0;
+        while (startIndex < content.Length)
+        {
+            var index = content.IndexOf(find, startIndex, StringComparison.OrdinalIgnoreCase);
+            if (index < 0)
+            {
+                break;
+            }
+
+            count++;
+            startIndex = index + find.Length;
+        }
+
+        return count;
+    }
+
+    private static void EnsureTemplateFiles(IReadOnlyList<TemplateItem> templateFiles, string templateRootPath)
+    {
+        if (!templateFiles.Any(file => !file.IsDirectory))
+        {
+            throw new InvalidOperationException($"Nessun file template trovato in '{templateRootPath}'.");
+        }
+    }
+
+    private static string EnsureNoRestrictionSignature(string content)
+    {
+        if (content.Contains("<norestrictionsignature>", StringComparison.OrdinalIgnoreCase))
+        {
+            return content;
+        }
+
+        var openTagIndex = content.IndexOf("<general>", StringComparison.OrdinalIgnoreCase);
+        if (openTagIndex < 0)
+        {
+            return content;
+        }
+
+        var closeTagIndex = content.IndexOf("</general>", openTagIndex, StringComparison.OrdinalIgnoreCase);
+        if (closeTagIndex < 0)
+        {
+            return content;
+        }
+
+        var newline = content.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
+        var generalStart = openTagIndex + "<general>".Length;
+        var generalBody = content.Substring(generalStart, closeTagIndex - generalStart);
+        var indent = DetectGeneralIndentation(generalBody);
+        var insertion = generalBody.EndsWith(newline, StringComparison.Ordinal)
+            ? $"{indent}<norestrictionsignature>true</norestrictionsignature>{newline}"
+            : $"{newline}{indent}<norestrictionsignature>true</norestrictionsignature>{newline}";
+
+        return content.Insert(closeTagIndex, insertion);
+    }
+
+    private static string DetectGeneralIndentation(string generalBody)
+    {
+        using var reader = new StringReader(generalBody);
+        string? line;
+        while ((line = reader.ReadLine()) is not null)
+        {
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                continue;
+            }
+
+            var trimmed = line.TrimStart();
+            var indentLength = line.Length - trimmed.Length;
+            if (indentLength > 0)
+            {
+                return line[..indentLength];
+            }
+
+            break;
+        }
+
+        return "    ";
+    }
+
+    private static string CreateProjectArchive(string outputDirectory, string tempOutputDirectory, string outputName)
+    {
+        var archivePath = Path.Combine(outputDirectory, $"{outputName}.cprj");
+
+        if (File.Exists(archivePath))
+        {
+            try
+            {
+                File.Delete(archivePath);
+            }
+            catch (IOException)
+            {
+                throw new IOException($"impossibile sovrascrivere '{outputName}.cprj' perche' il file e' aperto o bloccato.");
+            }
+        }
+
+        using var archive = ZipFile.Open(archivePath, ZipArchiveMode.Create);
+        foreach (var directory in Directory.GetDirectories(tempOutputDirectory, "*", SearchOption.AllDirectories))
+        {
+            var relativeDirectory = Path.GetRelativePath(tempOutputDirectory, directory).Replace('\\', '/').TrimEnd('/') + "/";
+            archive.CreateEntry(relativeDirectory);
+        }
+
+        foreach (var file in Directory.GetFiles(tempOutputDirectory, "*", SearchOption.AllDirectories))
+        {
+            var relativeFile = Path.GetRelativePath(tempOutputDirectory, file).Replace('\\', '/');
+            archive.CreateEntryFromFile(file, relativeFile, CompressionLevel.Optimal);
+        }
+
+        return archivePath;
+    }
+
+    private static TemplateContext PrepareTemplateContext(string sourcePath)
+    {
+        if (Directory.Exists(sourcePath))
+        {
+            var cprjFiles = Directory.GetFiles(sourcePath, "*.cprj", SearchOption.TopDirectoryOnly);
+            if (cprjFiles.Length == 1)
+            {
+                return PrepareTemplateContext(cprjFiles[0]);
+            }
+
+            if (cprjFiles.Length > 1)
+            {
+                throw new InvalidOperationException($"La cartella sorgente contiene piu' .cprj. Specifica direttamente il file template: {sourcePath}");
+            }
+
+            return new TemplateContext(sourcePath, null);
+        }
+
+        if (!File.Exists(sourcePath))
+        {
+            throw new InvalidOperationException($"Sorgente non trovata: {sourcePath}");
+        }
+
+        var extension = Path.GetExtension(sourcePath);
+        if (!extension.Equals(".cprj", StringComparison.OrdinalIgnoreCase) &&
+            !extension.Equals(".zip", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Il file sorgente deve essere .cprj oppure .zip per questa modalita'.");
+        }
+
+        var extractionRoot = Path.Combine(Path.GetTempPath(), $"cprj_template_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(extractionRoot);
+        ZipFile.ExtractToDirectory(sourcePath, extractionRoot);
+
+        return new TemplateContext(NormalizeExtractedRoot(extractionRoot), extractionRoot);
+    }
+
+    private static TemplateContext PrepareGenericTemplateContext(string sourcePath)
+    {
+        if (Directory.Exists(sourcePath))
+        {
+            return new TemplateContext(sourcePath, null);
+        }
+
+        if (!File.Exists(sourcePath))
+        {
+            throw new InvalidOperationException($"Sorgente non trovata: {sourcePath}");
+        }
+
+        var extension = Path.GetExtension(sourcePath);
+        if (!extension.Equals(".cprj", StringComparison.OrdinalIgnoreCase) &&
+            !extension.Equals(".zip", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Per una cartella generica seleziona una cartella, oppure usa un file singolo nella modalita' file.");
+        }
+
+        var extractionRoot = Path.Combine(Path.GetTempPath(), $"generic_template_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(extractionRoot);
+        ZipFile.ExtractToDirectory(sourcePath, extractionRoot);
+
+        return new TemplateContext(NormalizeExtractedRoot(extractionRoot), extractionRoot);
+    }
+
+    private static bool IsStandaloneFileSource(string sourcePath)
+    {
+        if (!File.Exists(sourcePath))
+        {
+            return false;
+        }
+
+        var extension = Path.GetExtension(sourcePath);
+        return !extension.Equals(".cprj", StringComparison.OrdinalIgnoreCase) &&
+               !extension.Equals(".zip", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string NormalizeExtractedRoot(string extractionRoot)
+    {
+        if (Directory.GetFiles(extractionRoot).Length > 0)
+        {
+            return extractionRoot;
+        }
+
+        var topDirectories = Directory.GetDirectories(extractionRoot);
+        return topDirectories.Length == 1 ? topDirectories[0] : extractionRoot;
+    }
+
+    private static IReadOnlyList<TemplateItem> GetTemplateItems(string templateRootPath)
+    {
+        var root = new DirectoryInfo(templateRootPath);
+        var directories = root
+            .GetDirectories("*", SearchOption.AllDirectories)
+            .Select(directory => TemplateItem.ForDirectory(directory.FullName, Path.GetRelativePath(templateRootPath, directory.FullName)));
+
+        var files = root
+            .GetFiles("*", SearchOption.AllDirectories)
+            .Select(file => TemplateItem.ForFile(file.FullName, Path.GetRelativePath(templateRootPath, file.FullName)));
+
+        return directories
+            .Concat(files)
+            .OrderBy(item => item.RelativePath, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static string CreateTempDirectory(string rootPath)
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), "CreaCprjMontante");
+        Directory.CreateDirectory(tempRoot);
+        var tempDirectory = Path.Combine(tempRoot, $"tmp_cprj_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDirectory);
+        return tempDirectory;
+    }
+
+    private static void DeleteDirectoryIfExists(string path)
+    {
+        try
+        {
+            if (Directory.Exists(path))
+            {
+                Directory.Delete(path, true);
+            }
+        }
+        catch (IOException)
+        {
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
+    }
+
+    private static string ResolveSourcePath(string sourcePath)
+    {
+        var normalized = NormalizeOptionalValue(sourcePath);
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            throw new InvalidOperationException("Percorso sorgente non specificato.");
+        }
+
+        return Path.GetFullPath(normalized.Trim('"'));
+    }
+
+    private static string ResolveOutputDirectory(string? requestedOutputDirectory)
+    {
+        var resolved = string.IsNullOrWhiteSpace(requestedOutputDirectory)
+            ? DefaultOutputDirectory
+            : Path.GetFullPath(requestedOutputDirectory.Trim().Trim('"'));
+
+        Directory.CreateDirectory(resolved);
+        return resolved;
+    }
+
+    private static string? ResolveOptionalPath(string? requestedPath, string sourcePath)
+    {
+        var normalized = NormalizeOptionalValue(requestedPath);
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            return null;
+        }
+
+        if (Path.IsPathRooted(normalized))
+        {
+            return Path.GetFullPath(normalized);
+        }
+
+        var baseDirectory = Directory.Exists(sourcePath)
+            ? sourcePath
+            : Path.GetDirectoryName(sourcePath) ?? Environment.CurrentDirectory;
+
+        return Path.GetFullPath(Path.Combine(baseDirectory, normalized));
+    }
+
+    private static Dictionary<string, int> BuildHeaderMap(IReadOnlyList<string> header)
+    {
+        var map = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        for (var i = 0; i < header.Count; i++)
+        {
+            var normalized = NormalizeHeader(header[i]);
+            if (!string.IsNullOrWhiteSpace(normalized))
+            {
+                map[normalized] = i;
+            }
+        }
+
+        return map;
+    }
+
+    private static List<string> SplitRow(string line, char delimiter) =>
+        line.Split(delimiter).Select(part => part.Trim().Trim('"')).ToList();
+
+    private static string NormalizeHeader(string header)
+    {
+        var buffer = new StringBuilder();
+        foreach (var ch in header)
+        {
+            if (char.IsLetterOrDigit(ch))
+            {
+                buffer.Append(char.ToLowerInvariant(ch));
+            }
+        }
+
+        return buffer.ToString();
+    }
+
+    private static string? NormalizeOptionalValue(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private sealed record BuildPlan(
+        string OutputName,
+        IReadOnlyList<TextReplacement> FileNameReplacements,
+        IReadOnlyList<TextReplacement> GlobalReplacements,
+        IReadOnlyDictionary<string, List<TextReplacement>> FileSpecificReplacements);
+
+    private sealed record TemplateItem(string FullPath, string RelativePath, bool IsDirectory)
+    {
+        public static TemplateItem ForDirectory(string fullPath, string relativePath) =>
+            new(fullPath, NormalizeRelativePath(relativePath), true);
+
+        public static TemplateItem ForFile(string fullPath, string relativePath) =>
+            new(fullPath, NormalizeRelativePath(relativePath), false);
+
+        private static string NormalizeRelativePath(string relativePath) =>
+            relativePath.Replace('\\', Path.DirectorySeparatorChar).Replace('/', Path.DirectorySeparatorChar);
+    }
+
+    private sealed record TextTemplateFile(string FullPath, string RelativePath, string Content);
+
+    private sealed record DeviceCsvEntry(string Montante, string DeviceType, string Ip, string? Label);
+
+    private sealed record GenericCsvData(
+        string CsvPath,
+        IReadOnlyList<string> Columns,
+        IReadOnlyList<string> ColumnPreviews,
+        IReadOnlyList<IReadOnlyList<string>> RowPreviews,
+        IReadOnlyList<IReadOnlyDictionary<string, string>> Rows);
+
+    private sealed record DeviceProject(
+        string Montante,
+        IReadOnlyDictionary<string, string> DeviceIps,
+        IReadOnlyDictionary<string, string> DeviceLabels);
+
+    private sealed record LegacyBatchRequest(
+        string TargetName,
+        string OutputName,
+        string? ExtraFind,
+        string? ExtraReplace,
+        IReadOnlyList<TextReplacement> AdditionalReplacements);
+
+    private sealed class TemplateContext(string templateRootPath, string? cleanupRootPath) : IDisposable
+    {
+        public string TemplateRootPath { get; } = templateRootPath;
+
+        public void Dispose()
+        {
+            if (!string.IsNullOrWhiteSpace(cleanupRootPath) && Directory.Exists(cleanupRootPath))
+            {
+                Directory.Delete(cleanupRootPath, true);
+            }
+        }
+    }
+}
